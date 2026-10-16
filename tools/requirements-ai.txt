@@ -1,0 +1,4 @@
+# Optional: AI upscaling of the 2D story art (tools/extract.py --ai).
+# Models are downloaded on first use into a per-user cache (see tools/ai_upscale.py).
+torch>=2.2
+spandrel>=0.4

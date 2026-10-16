@@ -150,6 +150,8 @@ def main():
     ap.add_argument('--skip-disc', action='store_true', help='reuse extracted/ instead of re-reading the disc')
     ap.add_argument('--only', help='comma-separated conversion steps: ' + ','.join(s for s, _ in STEPS))
     ap.add_argument('--upscale', type=int, default=4, help='texture upscale factor (1, 2 or 4)')
+    ap.add_argument('--ai', action='store_true',
+                    help='AI-upscale the 2D story art (de-dither + 4x model, local; needs tools/requirements-ai.txt)')
     ap.add_argument('--out', default=os.path.join(ROOT, 'gamedata'), help='converted asset folder (default: gamedata/)')
     a = ap.parse_args()
 
@@ -169,6 +171,14 @@ def main():
         step_tre(os.path.join(extracted, 'cd'), extracted)
         manifest = {'edition': edition, 'tre_sha1': hashes}
 
+    if a.ai:
+        import ai_upscale, upscale
+        if not ai_upscale.available():
+            sys.exit('error: --ai needs PyTorch and spandrel: pip install -r tools/requirements-ai.txt')
+        if a.upscale != 4:
+            sys.exit('error: --ai upscales 4x; use --upscale 4')
+        upscale.AI = True
+        manifest['upscaler'] = 'ai:' + ai_upscale.PIPELINE
     only = set(a.only.split(',')) if a.only else None
     for name, fn in STEPS:
         if only is None or name in only:

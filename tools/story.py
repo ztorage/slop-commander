@@ -20,6 +20,7 @@ import json, os, struct
 import numpy as np
 from PIL import Image
 import iff, shape, realspace
+import upscale
 from audio import voc_to_pcm, write_wav
 from upscale import upscale_rgba
 
@@ -189,9 +190,11 @@ class Art:
             self._shape_cache[key] = shapes
         return self._shape_cache[key]
 
-    def save(self, s, P, name):
+    def save(self, s, P, name, under=()):
         """Save a shape as an RGBA PNG cropped to its pixels; return {file, x, y, w, h} where (x, y)
-        is the top-left relative to the shape's hotspot, in original 320x200 pixels."""
+        is the top-left relative to the shape's hotspot, in original 320x200 pixels.
+        `under`: (shape, dx, dy) layers drawn beneath it (their hotspot at dx, dy from this one's);
+        the AI upscaler sees the layer over them, so overlays (mouths, heads) match their base."""
         if s is None:
             return None
         mask = s.pixels != shape.TRANSPARENT
@@ -199,13 +202,60 @@ class Art:
             return None
         ys, xs = np.nonzero(mask)
         y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+        entry = {'file': name + '.png', 'x': int(x0 - s.ox), 'y': int(y0 - s.oy), 'w': int(x1 - x0), 'h': int(y1 - y0)}
+        if upscale.AI and self.factor == 4:
+            self._save_ai(s, P, name, (x0, y0, x1, y1), under)
+            return entry
         px = s.pixels[y0:y1, x0:x1]
         rgba = np.zeros(px.shape + (4,), np.uint8)
         rgba[..., :3] = P[px]
         rgba[..., 3] = np.where(px == shape.TRANSPARENT, 0, 255)
         img = upscale_rgba(Image.fromarray(rgba, 'RGBA'), self.factor)
         img.save(os.path.join(self.out, name + '.png'), optimize=True)
-        return {'file': name + '.png', 'x': int(x0 - s.ox), 'y': int(y0 - s.oy), 'w': int(x1 - x0), 'h': int(y1 - y0)}
+        return entry
+
+    MARGIN = 6   # context pixels around a layer for the AI upscaler
+
+    def _save_ai(self, s, P, name, box, under):
+        import ai_upscale
+        x0, y0, x1, y1 = box
+        m = self.MARGIN
+        # region in this shape's hotspot coordinates, with a margin of context
+        hx, hy = x0 - s.ox - m, y0 - s.oy - m
+        w, h = x1 - x0 + 2 * m, y1 - y0 + 2 * m
+        idx = np.full((h, w), -1, np.int16)
+
+        def blit(src, dx, dy):
+            # src pixel (u, v) sits at hotspot coords (u - src.ox + dx, v - src.oy + dy)
+            ox, oy = -src.ox + dx - hx, -src.oy + dy - hy
+            sx0, sy0 = max(0, -ox), max(0, -oy)
+            sx1, sy1 = min(src.w, w - ox), min(src.h, h - oy)
+            if sx1 <= sx0 or sy1 <= sy0:
+                return
+            part = src.pixels[sy0:sy1, sx0:sx1]
+            dst = idx[sy0 + oy:sy1 + oy, sx0 + ox:sx1 + ox]
+            opaque = part != shape.TRANSPARENT
+            dst[opaque] = part[opaque]
+
+        fade = np.zeros((h, w), bool)
+        for entry_ in under:
+            u, dx, dy = entry_[:3]
+            if u is not None:
+                before = idx >= 0
+                blit(u, dx, dy)
+                if len(entry_) > 3 and entry_[3]:
+                    fade |= (idx >= 0) & ~before
+        beneath = np.where(fade, 255, 0).astype(np.uint8)
+        blit(s, 0, 0)
+        own = np.zeros((h, w), np.uint8)
+        own[m:m + y1 - y0, m:m + x1 - x0] = np.where(s.pixels[y0:y1, x0:x1] != shape.TRANSPARENT, 255, 0)
+        rgba = np.zeros((h, w, 4), np.uint8)
+        rgba[..., :3] = P[np.clip(idx, 0, 255)]
+        rgba[..., 3] = np.where(idx >= 0, 255, 0)
+        rgba = upscale._bleed(rgba)
+        out = ai_upscale.upscale_rgba(rgba, own, beneath)
+        f = self.factor
+        Image.fromarray(out[m * f:(h - m) * f, m * f:(w - m) * f], 'RGBA').save(os.path.join(self.out, name + '.png'), optimize=True)
 
 
 def convert_screens(opts_path, art):
@@ -216,9 +266,13 @@ def convert_screens(opts_path, art):
         P = art.patch(art.patch(art.base, art.opt_pals, back.first(b'PALT').data[0]), art.opt_pals, fore.first(b'PALT').data[0])
         scr = {'id': sid, 'color': sc.first(b'COLR').data[0] if sc.first(b'COLR') else 0,
                'tune': sc.first(b'TUNE').data[0] if sc.first(b'TUNE') else None, 'layers': [], 'sprites': []}
+        below = []        # what lies beneath the next layer (first frames, screen coordinates)
         for li, c in enumerate(back.find(b'SHAP')):
-            fr = [art.save(s, P, f'scr{sid}_bg{li}_{fi}') for fi, s in enumerate(art.frames('opt', c.data[0]))]
+            shapes = art.frames('opt', c.data[0])
+            fr = [art.save(s, P, f'scr{sid}_bg{li}_{fi}', below) for fi, s in enumerate(shapes)]
             scr['layers'].append([f for f in fr if f])
+            if shapes:
+                below = below + [(shapes[0], 0, 0)]
         for sp in fore.find(b'SPRT'):
             sh = sp.first(b'SHAP').data
             spr = {'id': sh[0], 'label': sp.first(b'LABL').data.split(b'\0')[0].decode('latin1').replace('\\', ''),
@@ -238,7 +292,10 @@ def convert_screens(opts_path, art):
             if sp.first(b'CLCK'):
                 spr['click'] = 1
             if sh[1] != 0xFF:
-                spr['frames'] = [art.save(s, P, f'scr{sid}_s{sh[0]}_{fi}') for fi, s in enumerate(art.frames('opt', sh[1]))]
+                shapes = art.frames('opt', sh[1])
+                base = shapes[0] if shapes else None
+                spr['frames'] = [art.save(s, P, f'scr{sid}_s{sh[0]}_{fi}', below + ([(base, 0, 0, True)] if fi > 0 and base else []))
+                                 for fi, s in enumerate(shapes)]
             scr['sprites'].append(spr)
         screens[sid] = scr
     return screens
@@ -256,16 +313,40 @@ def convert_shots(opts_path, art):
             P = art.base
             for p in s.first(b'PALS').find(b'PALT'):
                 P = art.patch(P, art.opt_pals, p.data[0])
-            layers = []
+            layers, below = [], []
             for li, c in enumerate(s.first(b'SHPS').children):
                 shp, x, y = struct.unpack_from('<Hhh', c.data)
                 fr = art.frames('opt', shp)
                 if c.name == 'SHAP':
                     fr = fr[:1]
-                saved = [art.save(f, P, f'shot{sid}_{li}_{fi}') for fi, f in enumerate(fr)]
+                ctx = [(u, ux - x, uy - y) for u, ux, uy in below]
+                saved = [art.save(f, P, f'shot{sid}_{li}_{fi}', ctx) for fi, f in enumerate(fr)]
+                if fr and c.name == 'SHAP':
+                    below.append((fr[0], x, y))
                 layers.append({'x': x, 'y': y, 'anim': c.name == 'MOBL', 'frames': [f for f in saved if f]})
             shots[sid] = layers
     return shots
+
+
+HAIR = 1                # face set frames (see FORMATS.md): 1 hair, 34-36 clothing
+CLOTHES = (34, 35, 36)  # the conversation player shows the first one a face has
+
+
+def _has_pixels(s):
+    return s is not None and (s.pixels != shape.TRANSPARENT).any()
+
+
+def merge_shapes(shapes):
+    """Flatten shapes sharing a hotspot (later ones on top) into one shape."""
+    left = max(s.ox for s in shapes); top = max(s.oy for s in shapes)
+    right = max(s.w - s.ox for s in shapes); bottom = max(s.h - s.oy for s in shapes)
+    px = np.full((top + bottom, left + right), shape.TRANSPARENT, np.uint8)
+    for s in shapes:
+        x0, y0 = left - s.ox, top - s.oy
+        dst = px[y0:y0 + s.h, x0:x0 + s.w]
+        opaque = s.pixels != shape.TRANSPARENT
+        dst[opaque] = s.pixels[opaque]
+    return shape.Shape(left + right, top + bottom, left, top, px)
 
 
 def convert_convart(convdata_path, art):
@@ -281,10 +362,12 @@ def convert_convart(convdata_path, art):
         P = art.base
         for src, shp, pal, _ in layers:          # the set's palette: patches applied in layer order
             P = art.patch(P, art.opt_pals if src == 1 else art.conv_pals, pal)
-        imgs = []
+        imgs, below = [], []
         for li, (src, shp, pal, dy) in enumerate(layers):
             fr = art.frames('opt' if src == 1 else 'conv', shp)
-            f = art.save(fr[0], P, f'set_{name}_{li}') if fr else None
+            f = art.save(fr[0], P, f'set_{name}_{li}', [(u, 0, udy - dy) for u, udy in below]) if fr else None
+            if fr:
+                below.append((fr[0], dy))
             if f:
                 f['y'] += dy
                 imgs.append(f)
@@ -293,11 +376,24 @@ def convert_convart(convdata_path, art):
     out['text_palette'] = ['%02x%02x%02x' % tuple(int(v) for v in c) for c in normal]   # subtitle colours
     for c in root['FACE'].children:
         name = nm(c.data)
-        out['faces'][name] = [art.save(s, normal, f'face_{name}_{i}') for i, s in enumerate(art.frames('conv', c.data[8]))]
+        fr = list(art.frames('conv', c.data[8]))
+        merged = [i for i in [0, HAIR] if i < len(fr) and _has_pixels(fr[i])]
+        clothes = next((i for i in CLOTHES if i < len(fr) and _has_pixels(fr[i])), None)
+        if clothes is not None:
+            merged.append(clothes)
+        if merged and merged[0] == 0:
+            fr[0] = merge_shapes([fr[i] for i in merged])      # drawn as one picture: no seams
+            for i in [HAIR, *CLOTHES]:      # now part of the base (unused clothing goes too)
+                if i < len(fr):
+                    fr[i] = None
+        base = [(fr[0], 0, 0, True)] if fr and fr[0] is not None else []
+        out['faces'][name] = [art.save(s, normal, f'face_{name}_{i}', base if i > 0 else ()) for i, s in enumerate(fr)]
     for c in root['FIGR'].children:
         name = nm(c.data)
         P = art.patch(art.base, art.conv_pals, fig_pal.get(name, 0x30))
-        out['figures'][name] = [art.save(s, P, f'fig_{name}_{i}') for i, s in enumerate(art.frames('conv', c.data[8]))]
+        fr = art.frames('conv', c.data[8])
+        base = [(fr[0], 0, 0, True)] if fr and fr[0] is not None else []
+        out['figures'][name] = [art.save(s, P, f'fig_{name}_{i}', base if i > 0 else ()) for i, s in enumerate(fr)]
     return out
 
 

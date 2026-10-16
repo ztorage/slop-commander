@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image, ImageFilter
 
 REALESRGAN = shutil.which('realesrgan-ncnn-vulkan')
+AI = False      # set by extract.py --ai: callers that pass context use tools/ai_upscale.py
 
 
 def _scale2x(a):

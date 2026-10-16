@@ -140,6 +140,11 @@ def step_cinematics(extracted, assets, upscale):
     return manifest_extra
 
 
+def step_midgames(extracted, assets, upscale):
+    import midgames
+    midgames.convert(extracted, os.path.join(assets, 'cinematics'), upscale, log)
+
+
 def step_story(extracted, assets, upscale):
     import story
     story.convert(extracted, os.path.join(assets, 'story'), upscale, log)
@@ -147,7 +152,7 @@ def step_story(extracted, assets, upscale):
 
 STEPS = [('models', step_models), ('terrain', step_terrain), ('aircraft', step_aircraft),
          ('cockpits', step_cockpits), ('weapons', step_weapons), ('missions', step_missions),
-         ('ground', step_ground), ('audio', step_audio), ('story', step_story), ('cinematics', step_cinematics)]
+         ('ground', step_ground), ('audio', step_audio), ('story', step_story), ('cinematics', step_cinematics), ('midgames', step_midgames)]
 
 
 def main():

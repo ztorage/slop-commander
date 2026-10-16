@@ -231,8 +231,24 @@ Decoded from the CD's player (`MENU.EXE`, "PLAYFLIC 1.0b"), disassembled for the
   ends; clips start at frames 1, 128, 151, 165, 215, 230, 265, 305, 360, 385, 415, 550, 680, 705,
   760, 830 (one channel, each cuts the previous).
 
+## Cutscenes ("midgames") 🟡 (`MIDGAMES/*`, `tools/midgames.py`, runtime `midgame_player.gd`)
+The art is data, the choreography is code in `OPTTEST.EXE` (Borland C++, VROOMM overlays: far calls
+in overlay code use segment = 8 x index into the `FBOV` segment table at file offset 0x50570,
+entries (u16 paragraph, size, flags, ?)). The intro is the function at image offset 0x671A0 and
+its continuation at 0x6E882 (DS = 0x4C25).
+- `MIDn.PAK` (LZW entries): shape sets (320x128 cutscene frames, hotspot conventions as
+  conversations) and palette patches; `MIDGAMES.PAK`: shared backgrounds, clouds, palettes;
+  `MIDnVOC.PAK`: speech; `MIDGAMES.IFF`: per cutscene `MGnn/DATA` (cards) and `SPOK` (subtitles).
+- Scene engine: a scene ticks every N/60 s (the cutscene timer is a 60 Hz AIL timer callback;
+  intro scenes use N = 10 or 20); objects are sprites (shape set, frame, x, y relative to a
+  parent, children), panning sprites add a velocity each tick, animations advance one frame per
+  tick and report done after their last frame; speech starts on scene frame counts.
+- Intro so far: sky + eagle (speech 7 at frames 20, 35), four credit cards (fade 16 x 3 ticks,
+  hold 100, gap 100/250), parallax dive through the clouds until the nearest layer reaches y 60,
+  jet fly-by MID1 13 at (0, -70) with speech 8 at frame 65. Font: MID1 27 (ASCII glyphs).
+
 ## Not yet examined ⬜
-Fonts, midgame cutscenes (`MIDGAMES`), flight model constants.
+Fonts (other than the cutscene font), flight model constants.
 
 ## Credits
 Terrain overlay/object record layouts and the `RANG` colour formula were confirmed against the

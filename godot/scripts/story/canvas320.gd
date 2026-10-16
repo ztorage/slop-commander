@@ -11,13 +11,16 @@ const CONV_Y := 24.0              # conversation / shot art is placed below a 24
 
 static var _textures := {}
 
+var img_dir := "story/img/"        # where this canvas's image entries live (under gamedata)
 
-static func texture(file: String) -> Texture2D:
-	if _textures.has(file):
-		return _textures[file]
-	var img := Image.load_from_file(GameData.path("story/img/" + file))
+
+static func texture(file: String, folder := "story/img/") -> Texture2D:
+	var key := folder + file
+	if _textures.has(key):
+		return _textures[key]
+	var img := Image.load_from_file(GameData.path(key))
 	var tex: Texture2D = ImageTexture.create_from_image(img) if img else null
-	_textures[file] = tex
+	_textures[key] = tex
 	return tex
 
 
@@ -55,7 +58,7 @@ func px() -> float:
 func draw_entry(e, at := Vector2.ZERO, modulate_ := Color.WHITE) -> void:
 	if e == null or not e is Dictionary:
 		return
-	var tex := texture(String(e.file))
+	var tex := texture(String(e.file), img_dir)
 	if tex == null:
 		return
 	var tl := to_screen(at + Vector2(float(e.x), float(e.y)))

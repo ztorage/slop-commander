@@ -17,6 +17,7 @@ const LOOK := {
 
 var target: Aircraft
 var cockpit: Cockpit
+var orbit_node: Node3D           # optional orbit centre (e.g. the parachute after ejecting)
 var view := View.CHASE
 var _orbit_yaw := 0.6
 var _orbit_pitch := -0.25
@@ -64,8 +65,9 @@ func update_view(_dt: float) -> void:
 			look_at(t * Vector3(0, 1.2, -30.0), t.basis.y)
 		View.ORBIT:
 			var dir := Vector3(cos(_orbit_pitch) * sin(_orbit_yaw), -sin(_orbit_pitch), cos(_orbit_pitch) * cos(_orbit_yaw))
-			global_position = t.origin + dir * _orbit_dist
-			look_at(t.origin)
+			var centre := orbit_node.global_position if is_instance_valid(orbit_node) else t.origin
+			global_position = centre + dir * _orbit_dist
+			look_at(centre)
 
 
 func _set_projection(boresight_offset: bool) -> void:

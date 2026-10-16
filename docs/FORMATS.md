@@ -92,6 +92,21 @@ warning lights, RAWS radar warning (NORM in-panel scope, ZOOM for an MFD, SYMB t
 (first bytes include the preferred side) and `SHAP` symbology. In-panel MFD screens and the HUD
 glass are painted into the art; their rectangles are measured and stored in `tools/cockpit.py`.
 
+## Weapons & effects ✅ (`tools/weapons.py`)
+`OBJT` sub-forms: `MISS` missiles, `TRCR` gun rounds, `BOMB`, `DECY` flare/chaff (also `GRND`
+vehicles, `SWPN` SAM/AAA sites & ships, `ORNT` scenery, `DEBR` debris, `EXPL` explosions, `EJEC`,
+`OMOB` parachutes, `RNWY`, `XMIT`).
+- `EXPL` (12): `char sprite[8], u16 blastRadiusFt, u16 damage`.
+- `WDAT` (22): `u16 damage, u16 ?, u8 guidance[5]` (byte 1: 1 = IR, 9 = radar, 3 = TV),
+  `u32 rangeFt, u8 seekerConeDeg, u32 range2Ft`, …
+- `DYNM/DYNM`: mass kg (24.8). `DYNM/MISS`: `turnG, maxSpeed m/s, motor` (24.8).
+- `DATA` byte 4: 1 = air-to-air.
+- Aircraft `JETP`: `DAMG` u16 hit points (F-16 70, MiG-29 29, Su-27 37, F-22 80); `EXPL` explosion;
+  `DEST` debris models (14-byte records `char name[8]` + 6 bytes); `DEBR` generic debris list.
+- `APPR/ANIM`: sprite animations — `INFO`, `SEQU`, `SHAP` = LZ shape set of frames (explosions,
+  `GUNSPARK`, ground explosions `GRNDEX*`, `FLARE`, `CHAFF`).
+- Cockpit `EJEC` frames are overlays for the front view (ejection handle pull, MFDs dropping out).
+
 ## Not yet examined ⬜
 Missions (`MISN-*.IFF`), fonts, gameflow/conversations, FLIC cutscenes (`*.FLX`), XMIDI music,
 VOC speech, flight model constants.

@@ -7,10 +7,11 @@ extends Node
 ##   2. <user data dir>/gamedata         (for exported builds)
 ##   3. <repo>/gamedata                  (next to the godot/ project, for development)
 
-const REQUIRED_CONVERTER_VERSION := 5
+const REQUIRED_CONVERTER_VERSION := 6
 
 var root := ""
 var manifest := {}
+var launch := {}                 # settings passed from the menu to the next scene (e.g. scenario)
 var _model_cache := {}
 
 

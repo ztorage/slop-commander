@@ -1,21 +1,20 @@
 extends Node
-## Registers flight input actions at startup (keyboard + gamepad), so bindings live in code
-## rather than in hand-edited project.godot InputEvent blobs.
+## Input actions registered in code. Keyboard follows the original Strike Commander reference
+## card (handled by key code in flight_scene.gd); actions here cover the analogue controls, fire,
+## and gamepad buttons.
 ##
-## Keyboard (close to the original's layout):
-##   Arrows: stick   , / . : rudder   + / - : throttle   1-0: throttle 10%-100%
-##   Backspace: afterburner   G: gear   B: airbrake   W: wheel brakes   R: restart on runway
-##   T: restart airborne   F1/F2/F3 or [ ]: cockpit / chase / orbit camera
+##   Arrows: stick   , . (or Z X): rudder   + -: throttle   1-5: military power   6-0: afterburner
+##   Space: fire   W: next weapon   G: guns   T / Shift-T / Ctrl-T: target farther / closer / none
+##   ; chaff   ' flare   L gear   B brakes (wheel / air)   Ctrl-E eject   D damage MFD
+##   F1 cockpit  F2 chase  F3/F4/F5 left/right/back  F6 external   [ ] cycle views
+##   Ctrl-R restart   Shift-R restart airborne   Ctrl-I cockpit art on/off   Esc menu
 
 const KEYS := {
 	"pitch_up": [KEY_DOWN], "pitch_down": [KEY_UP],
 	"roll_left": [KEY_LEFT], "roll_right": [KEY_RIGHT],
 	"yaw_left": [KEY_COMMA, KEY_Z], "yaw_right": [KEY_PERIOD, KEY_X],
 	"throttle_up": [KEY_EQUAL, KEY_KP_ADD], "throttle_down": [KEY_MINUS, KEY_KP_SUBTRACT],
-	"afterburner": [KEY_BACKSPACE, KEY_TAB],
-	"gear": [KEY_G], "airbrake": [KEY_B], "brakes": [KEY_W],
-	"reset_runway": [KEY_R], "reset_air": [KEY_T],
-	"view_cockpit": [KEY_F1], "view_chase": [KEY_F2], "view_orbit": [KEY_F3],
+	"fire": [KEY_SPACE],
 }
 
 const JOY_AXES := {
@@ -26,26 +25,33 @@ const JOY_AXES := {
 }
 
 const JOY_BUTTONS := {
-	"afterburner": JOY_BUTTON_RIGHT_SHOULDER, "airbrake": JOY_BUTTON_LEFT_SHOULDER,
-	"gear": JOY_BUTTON_Y, "brakes": JOY_BUTTON_B, "reset_runway": JOY_BUTTON_BACK,
-	"view_chase": JOY_BUTTON_DPAD_DOWN, "view_cockpit": JOY_BUTTON_DPAD_UP, "view_orbit": JOY_BUTTON_DPAD_RIGHT,
+	"fire": JOY_BUTTON_A, "next_weapon": JOY_BUTTON_X, "target_next": JOY_BUTTON_Y,
+	"decoys": JOY_BUTTON_B, "brakes": JOY_BUTTON_LEFT_SHOULDER, "gear": JOY_BUTTON_RIGHT_SHOULDER,
+	"reset_runway": JOY_BUTTON_BACK, "view_chase": JOY_BUTTON_DPAD_DOWN,
+	"view_cockpit": JOY_BUTTON_DPAD_UP, "view_orbit": JOY_BUTTON_DPAD_RIGHT,
 }
 
 
 func _ready() -> void:
 	for action in KEYS:
-		if not InputMap.has_action(action):
-			InputMap.add_action(action, 0.15)
+		_ensure(action)
 		for k in KEYS[action]:
 			var ev := InputEventKey.new()
 			ev.physical_keycode = k
 			InputMap.action_add_event(action, ev)
 	for action in JOY_AXES:
+		_ensure(action)
 		var ev := InputEventJoypadMotion.new()
 		ev.axis = JOY_AXES[action][0]
 		ev.axis_value = JOY_AXES[action][1]
 		InputMap.action_add_event(action, ev)
 	for action in JOY_BUTTONS:
+		_ensure(action)
 		var ev := InputEventJoypadButton.new()
 		ev.button_index = JOY_BUTTONS[action]
 		InputMap.action_add_event(action, ev)
+
+
+func _ensure(action: String) -> void:
+	if not InputMap.has_action(action):
+		InputMap.add_action(action, 0.15)

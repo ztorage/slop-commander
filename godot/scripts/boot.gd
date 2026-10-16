@@ -2,7 +2,8 @@ extends Control
 ## Entry point: refuses to continue unless game data extracted from a real CD is present.
 
 const MENU := [
-	["Free flight  (F-16 from the runway, San Francisco)", "res://scenes/flight.tscn"],
+	["Dogfight  (F-16 vs 2 MiG-29s)", "res://scenes/flight.tscn", {"SC_SCENARIO": "dogfight", "SC_BANDITS": "2"}],
+	["Free flight  (F-16 from the runway, San Francisco)", "res://scenes/flight.tscn", {"SC_SCENARIO": "free"}],
 	["Theatre viewer  (fly over the maps)", "res://scenes/theatre_viewer.tscn"],
 	["Model viewer  (aircraft, vehicles, buildings)", "res://scenes/model_viewer.tscn"],
 ]
@@ -52,7 +53,9 @@ func _show_menu() -> void:
 		var b := Button.new()
 		b.text = item[0]
 		b.add_theme_font_size_override("font_size", 20)
-		b.pressed.connect(func(): get_tree().change_scene_to_file(item[1]))
+		b.pressed.connect(func():
+			GameData.launch = item[2] if item.size() > 2 else {}
+			get_tree().change_scene_to_file(item[1]))
 		box.add_child(b)
 	box.get_child(2).grab_focus.call_deferred()
 	box.position -= box.get_combined_minimum_size() * 0.5

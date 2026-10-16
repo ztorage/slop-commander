@@ -47,7 +47,7 @@ var crash_reason := ""
 var stick := Vector2.ZERO        # x = roll right +, y = pull back +
 var rudder := 0.0                # right +
 var throttle := 0.7              # 0..1
-var afterburner := false
+var afterburner := 0.0           # 0..1 afterburner stage (original keys 6-0 = 20%..100%)
 var airbrake := false
 var gear_down := true
 var brakes := false
@@ -139,10 +139,10 @@ func step(dt: float, ground_height: Callable) -> void:
 	var drag := q * cd_area
 
 	# --- thrust & fuel ---
-	var ab_on := afterburner and has_afterburner and throttle > 0.95 and fuel > 0.0
-	var t_static := throttle * thrust_mil + ((thrust_max - thrust_mil) if ab_on else 0.0)
+	var ab := afterburner if has_afterburner and fuel > 0.0 else 0.0
+	var t_static := throttle * thrust_mil + (thrust_max - thrust_mil) * ab
 	thrust = _thrust_at(t_static, rho) if fuel > 0.0 else 0.0
-	var flow := (throttle * thrust_mil * 0.000022) + ((thrust_max - thrust_mil) * 0.000085 if ab_on else 0.0)
+	var flow := (throttle * thrust_mil * 0.000022) + (thrust_max - thrust_mil) * 0.000085 * ab
 	fuel = maxf(fuel - flow * dt, 0.0)
 
 	# --- side force (weathervane) ---

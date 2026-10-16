@@ -35,6 +35,13 @@ def parse_jdyn(jd):
     }
 
 
+def parse_expl(c):
+    if c is None:
+        return None
+    return {'sprite': c.data[:8].split(b'\0')[0].decode('latin1'),
+            'radius_ft': struct.unpack_from('<H', c.data, 8)[0], 'damage': struct.unpack_from('<H', c.data, 10)[0]}
+
+
 def parse_children(chld):
     out = []
     for k in range(0, len(chld) - 31, 32):
@@ -85,6 +92,10 @@ def convert(objects_dir, out_dir, log=print):
             'jdyn': parse_jdyn(dynm.first(b'JDYN').data),
             'children': parse_children(jetp.first(b'CHLD').data) if jetp.first(b'CHLD') else [],
             'weapons': parse_weapons(jetp.first(b'WEAP')),
+            'hit_points': struct.unpack_from('<H', jetp.first(b'DAMG').data)[0] if jetp.first(b'DAMG') else 30,
+            'explosion': parse_expl(jetp.first(b'EXPL')),
+            'debris': [jetp.first(b'DEST').data[k:k + 8].split(b'\0')[0].decode('latin1')
+                       for k in range(0, len(jetp.first(b'DEST').data) - 7, 14)] if jetp.first(b'DEST') else [],
             'ejection_seat': jetp.first(b'EJEC').data.split(b'\0')[0].decode('latin1') if jetp.first(b'EJEC') else None,
         }
         with open(os.path.join(out_dir, info['name'] + '.json'), 'w') as f:

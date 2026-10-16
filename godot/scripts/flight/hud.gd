@@ -12,6 +12,7 @@ const KT := 1.0 / 0.514444
 var aircraft: Aircraft
 var camera: Camera3D
 var cockpit: Cockpit
+var world: CombatWorld
 var message := ""
 var _font: Font
 
@@ -36,6 +37,8 @@ func _draw() -> void:
 		return
 	var fm := aircraft.fm
 	var vp := get_viewport_rect().size
+	if cockpit and cockpit.ejecting():
+		return
 	var rig := camera as CameraRig
 	if rig and not rig.is_cockpit():
 		_draw_external(fm, vp)
@@ -129,10 +132,12 @@ func _draw() -> void:
 	_txt(Vector2(lx, ly + 22), "AOA %.0f" % rad_to_deg(fm.alpha), 16, WARN if fm.stalled else COL)
 
 	# --- right column: throttle, fuel ---
-	var thr := "AB" if fm.afterburner and fm.has_afterburner and fm.throttle > 0.95 else "%d%%" % int(fm.throttle * 100)
+	var thr := "AB %d%%" % int(fm.afterburner * 100) if fm.afterburner > 0.0 and fm.has_afterburner else "%d%%" % int(fm.throttle * 100)
 	_txt(Vector2(rx, ly), "THR " + thr, 16)
 	var fuel_frac := fm.fuel / maxf(fm.fuel_capacity, 1)
 	_txt(Vector2(rx, ly + 22), "FUEL %d" % int(fm.fuel * 2.20462), 16, WARN if fuel_frac < 0.15 else COL)
+
+	_draw_combat(fm, glass, c, px_per_rad, glass.end.y - 64)
 
 	# --- status flags ---
 	var flags := []
@@ -146,11 +151,44 @@ func _draw() -> void:
 		_txt(Vector2(0, c.y - 120), message, 26, WARN, HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 
 
+## Weapon, target box, lock, gun lead and missile warning. Works in any view.
+func _draw_combat(fm: FlightModel, frame: Rect2, c: Vector2, px_per_rad: float, weapon_y: float) -> void:
+	var w := aircraft.weapons
+	var wl := "%s %d" % [w.selected_name(), w.selected_count()]
+	_txt(Vector2(c.x - 100, weapon_y), wl, 16, COL, HORIZONTAL_ALIGNMENT_CENTER, 200)
+	if world and world.missiles_tracking(aircraft).size() > 0 and int(Time.get_ticks_msec() / 250) % 2 == 0:
+		_txt(Vector2(c.x - 100, frame.position.y + 52), "MISSILE", 22, WARN, HORIZONTAL_ALIGNMENT_CENTER, 200)
+	var t := w.target
+	if t == null or not t.alive:
+		return
+	var dist := aircraft.global_position.distance_to(t.global_position)
+	if camera.is_position_behind(t.global_position):
+		_txt(Vector2(c.x - 100, weapon_y + 20), "TGT %.1f NM BEHIND" % (dist / 1852.0), 14, COL, HORIZONTAL_ALIGNMENT_CENTER, 200)
+		return
+	var sp := camera.unproject_position(t.global_position)
+	var r := 14.0
+	draw_rect(Rect2(sp - Vector2(r, r), Vector2(r, r) * 2), COL, false, 2)
+	_txt(sp + Vector2(-40, r + 16), "%.1f" % (dist / 1852.0), 13, COL, HORIZONTAL_ALIGNMENT_CENTER, 80)
+	if w.guns_mode:
+		var muzzle := float(w.gun_data.get("muzzle_velocity_ms", 1000.0))
+		var tof := dist / muzzle
+		var lead := t.global_position + (t.fm.velocity - fm.velocity) * tof + Vector3.UP * 4.9 * tof * tof
+		if not camera.is_position_behind(lead):
+			var lp := camera.unproject_position(lead)
+			draw_arc(lp, 7, 0, TAU, 16, COL, 2)
+			draw_line(lp + Vector2(-12, 0), lp + Vector2(12, 0), COL, 1)
+	elif w.locked():
+		draw_arc(sp, r * 1.8, 0, TAU, 32, WARN, 2)
+		_txt(sp + Vector2(-40, -r * 2.2), "LOCK", 15, WARN, HORIZONTAL_ALIGNMENT_CENTER, 80)
+	elif w.lock_progress > 0.0:
+		draw_arc(sp, r * (4.0 - 2.2 * w.lock_progress / WeaponSystem.LOCK_TIME), 0, TAU, 32, COL, 1)
+
+
 ## Compact readout for chase/orbit views, where a pilot's HUD would be misleading.
 func _draw_external(fm: FlightModel, vp: Vector2) -> void:
 	var fwd := -fm.basis.z
 	var heading := fposmod(rad_to_deg(atan2(fwd.x, -fwd.z)), 360.0)
-	var thr := "AB" if fm.afterburner and fm.has_afterburner and fm.throttle > 0.95 else "%d%%" % int(fm.throttle * 100)
+	var thr := "AB %d%%" % int(fm.afterburner * 100) if fm.afterburner > 0.0 and fm.has_afterburner else "%d%%" % int(fm.throttle * 100)
 	var line := "%d KTS   %d FT   HDG %03d   G %.1f   THR %s   FUEL %d" % [
 		fm.airspeed * KT, fm.position.y * FT, heading, fm.load_factor, thr, fm.fuel * 2.20462]
 	var flags := []
@@ -159,7 +197,8 @@ func _draw_external(fm: FlightModel, vp: Vector2) -> void:
 	if fm.stalled: flags.append("STALL")
 	_txt(Vector2(0, vp.y - 40), line + ("   " + " ".join(flags) if flags.size() else ""), 16, COL,
 		HORIZONTAL_ALIGNMENT_CENTER, vp.x)
-	_txt(Vector2(16, 28), "[ ] or F1-F3: view   Arrows stick  , . rudder  +/- 1-0 throttle  Bksp AB  G gear  B brake  R/T restart", 13, Color(1, 1, 1, 0.7))
+	_draw_combat(fm, Rect2(Vector2.ZERO, vp), vp * 0.5, 0.0, vp.y - 66)
+	_txt(Vector2(16, 28), "F1-F6 / [ ]: views   Space fire  W weapon  G guns  T target  ; chaff  ' flare  1-5 power  6-0 AB  L gear  B brakes  Ctrl-E eject  Ctrl-R restart", 13, Color(1, 1, 1, 0.7))
 	if message != "":
 		_txt(Vector2(0, vp.y * 0.5 - 120), message, 26, WARN, HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 

@@ -26,19 +26,24 @@ The game looks for `gamedata/` in `$SC_GAMEDATA`, then the app's user-data folde
 (`~/Library/Application Support/Godot/app_userdata/Strike Commander Remake/gamedata`), then next to
 the `godot/` project. Without it, the game shows instructions and does not start.
 
-## Flight controls
+## Controls (follows the original reference card)
 
 | Key | Action | Key | Action |
 |---|---|---|---|
 | Arrows | stick (pitch/roll) | `,` `.` (or Z X) | rudder |
-| `+` `-` / `1`–`0` | throttle | Backspace / Tab | afterburner |
-| G | landing gear | B | air brake |
-| W | wheel brakes | R / T | restart on runway / in the air |
-| F1 / F2 / F3, `[` `]` | cockpit / chase / orbit view | F4 / F5 / F6 | look left / right / back |
-| Ctrl+I | cockpit art on/off (HUD only) | M | right MFD: weapons / damage |
+| `1`–`5` | military power 20–100% | `6`–`0` | afterburner 20–100% |
+| `+` `-` | throttle up/down (into afterburner) | L | landing gear |
+| B | wheel brakes / air brake | Ctrl+E | eject |
+| Space | fire selected weapon | W | next weapon |
+| G | guns (dogfight) mode | T / Shift+T / Ctrl+T | target farther / closer / none |
+| `;` | chaff | `'` | flare |
+| F1 | cockpit | F2 | chase camera |
+| F3 / F4 / F5 | look left / right / back | F6 | external (orbit, mouse-drag) |
+| `[` `]` | cycle views | D | right MFD: weapons / damage |
+| Ctrl+I | cockpit art on/off | Ctrl+R / Shift+R | restart / restart airborne |
 | Esc | menu | | |
 
-Gamepads work too (left stick, triggers for throttle, shoulders for afterburner/air brake).
+Gamepads: left stick flies, triggers are throttle, A fires, X next weapon, Y target, B decoys.
 
 ## Layout
 

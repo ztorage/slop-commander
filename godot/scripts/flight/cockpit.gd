@@ -12,6 +12,7 @@ const FT := 3.28084
 enum Side { FRONT, LEFT, RIGHT, REAR }
 
 var aircraft: Aircraft
+var world: CombatWorld
 var side := Side.FRONT
 var art_enabled := true
 var right_mfd := 0           # 0 weapons, 1 damage
@@ -20,6 +21,11 @@ var _dir := ""
 var _views: Array[Texture2D] = []
 var _tex := {}               # file -> Texture2D
 var _font: Font
+var _eject_frame := -1
+
+
+func ejecting() -> bool:
+	return _eject_frame >= 0
 
 
 static func create(cockpit_name: String) -> Cockpit:
@@ -78,7 +84,23 @@ func _process(_d: float) -> void:
 	queue_redraw()
 
 
+## Play the original ejection sequence full-screen (15 frames).
+func play_eject() -> void:
+	var n: int = layout.get("eject", []).size()
+	for i in n:
+		_eject_frame = i
+		await get_tree().create_timer(0.1).timeout
+	_eject_frame = -1
+
+
 func _draw() -> void:
+	if _eject_frame >= 0:
+		# overlays for the front view: the ejection handle being pulled, then MFDs dropping to static
+		var e: Dictionary = layout.eject[_eject_frame]
+		var rect := Rect2(art_origin(), SCREEN * art_scale())
+		draw_texture_rect(_views[0], rect, false)
+		draw_texture_rect(_texture(e.file), rect, false)
+		return
 	if not art_enabled or aircraft == null:
 		return
 	var view_index := int(side)
@@ -87,6 +109,7 @@ func _draw() -> void:
 	if side == Side.FRONT:
 		_draw_gauges()
 		_draw_mfds()
+		_draw_threats()
 
 
 func _shape(entry: Dictionary) -> Texture2D:
@@ -124,20 +147,85 @@ func _draw_mfds() -> void:
 		var r := rect_to_screen(screens.L)
 		draw_rect(r, Color(0.02, 0.12, 0.04))
 		_fit(modes.aard[3], r.grow(-r.size.x * 0.04))  # radar range/azimuth grid
+		_draw_radar_contacts(r)
 		_mfd_text(r, ["RDR  20", "", "", "", "", "HDG %03d" % _heading()])
 	if screens.has("R"):
 		var r := rect_to_screen(screens.R)
 		draw_rect(r, Color(0.02, 0.12, 0.04))
 		if right_mfd == 0 and modes.has("weap"):
 			_fit(modes.weap[0], Rect2(r.position + Vector2(0, r.size.y * 0.18), r.size * Vector2(1, 0.55)))
-			var stations: Array = aircraft.data.get("weapons", {}).get("stations", [])
+			var w := aircraft.weapons
 			var lines := ["WPNS"]
-			for st in stations.slice(0, 2):
-				lines.append("%d %s" % [st.count, st.weapon])
+			for i in w.stations.size():
+				var st: Dictionary = w.stations[i]
+				var sel := not w.guns_mode and i == w.selected
+				lines.append("%s%d %s" % [">" if sel else " ", st.count, st.weapon])
+			lines.append("%sGUN %d" % [">" if w.guns_mode else " ", w.gun_rounds])
+			lines.append(" F%d C%d" % [w.flares, w.chaff])
 			_mfd_text(r, lines)
 		elif modes.has("damg"):
-			_fit(modes.damg[0], r.grow(-r.size.x * 0.06))
-			_mfd_text(r, ["DAMAGE", "", "", "", "", "SYS OK"])
+			var frac := clampf(aircraft.hp / maxf(aircraft.max_hp, 1.0), 0.0, 1.0)
+			var tint := Color(1, 0.3, 0.2).lerp(Color(1, 1, 1), frac)
+			var entry: Dictionary = modes.damg[0]
+			var size := Vector2(entry.w, entry.h)
+			var rr := r.grow(-r.size.x * 0.06)
+			var k := minf(rr.size.x / size.x, rr.size.y / size.y)
+			draw_texture_rect(_shape(entry), Rect2(rr.position + (rr.size - size * k) * 0.5, size * k), false, tint)
+			_mfd_text(r, ["DAMAGE", "", "", "", "", "HULL %d%%" % int(frac * 100)])
+
+
+## Plan view of radar contacts: own ship at the bottom centre, 20 nm at the top edge.
+func _draw_radar_contacts(r: Rect2) -> void:
+	if world == null:
+		return
+	var w := aircraft.weapons
+	var origin := Vector2(r.get_center().x, r.end.y - r.size.y * 0.08)
+	var scale := (r.size.y * 0.85) / WeaponSystem.RADAR_RANGE
+	var inv := aircraft.global_transform.affine_inverse()
+	for a in w.radar_contacts(world):
+		var l: Vector3 = inv * a.global_position          # x right, -z ahead
+		var p := origin + Vector2(l.x, l.z) * scale
+		if not r.has_point(p):
+			continue
+		var col := Color(1, 1, 0.4) if a == w.target else MFD_GREEN
+		draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), col, a == w.target, 1.5)
+	for m in world.missiles:
+		var l: Vector3 = inv * m.global_position
+		var p := origin + Vector2(l.x, l.z) * scale
+		if r.has_point(p):
+			draw_circle(p, 1.8, Color(1, 0.4, 0.3))
+
+
+## Radar-warning scope (bearing of enemies and missiles) and the IR / RADAR launch lamps.
+func _draw_threats() -> void:
+	if world == null:
+		return
+	var inst: Dictionary = layout.instruments
+	if inst.has("raws"):
+		var info: Array = inst.raws.info
+		var centre := to_screen(Vector2(info[14], info[15]))
+		var radius := art_scale() * 12.0
+		var inv := aircraft.global_transform.affine_inverse()
+		for a in world.aircraft:
+			if a.team == aircraft.team or not a.alive:
+				continue
+			var l: Vector3 = inv * a.global_position
+			var dir := Vector2(l.x, l.z).normalized()
+			draw_circle(centre + dir * radius, art_scale() * 1.3, Color(1, 0.85, 0.3))
+		for m in world.missiles_tracking(aircraft):
+			var l: Vector3 = inv * m.global_position
+			var dir := Vector2(l.x, l.z).normalized()
+			if int(Time.get_ticks_msec() / 150) % 2 == 0:
+				draw_circle(centre + dir * radius * 0.6, art_scale() * 1.8, Color(1, 0.25, 0.2))
+	# warning lamps painted at (82..111, 100..109): IR on the left, RADAR on the right
+	var tracking := world.missiles_tracking(aircraft)
+	var ir := tracking.any(func(m): return m.infrared)
+	var radar := tracking.any(func(m): return not m.infrared)
+	var blink := int(Time.get_ticks_msec() / 200) % 2 == 0
+	if ir and blink:
+		draw_circle(to_screen(Vector2(87.5, 103.5)), art_scale() * 2.6, Color(1.0, 0.7, 0.2, 0.9))
+	if radar and blink:
+		draw_circle(to_screen(Vector2(104.5, 103.5)), art_scale() * 2.6, Color(1.0, 0.2, 0.15, 0.9))
 
 
 func _fit(entry: Dictionary, r: Rect2) -> void:

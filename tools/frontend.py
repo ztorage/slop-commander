@@ -36,7 +36,8 @@ class Art:
                       'SAVELOAD': open(os.path.join(D, 'GAMEFLOW', 'SAVELOAD.SHP'), 'rb').read(),
                       'TM': open(os.path.join(D, 'GAMEFLOW', 'TM.SHP'), 'rb').read(),
                       'GAUNTMEN': open(os.path.join(D, 'GAMEFLOW', 'GAUNTMEN.SHP'), 'rb').read(),
-                      'BWFONT': open(os.path.join(D, 'GAMEFLOW', 'BWFONT.SHP'), 'rb').read()}
+                      'BWFONT': open(os.path.join(D, 'GAMEFLOW', 'BWFONT.SHP'), 'rb').read(),
+                      'MAPFONT': open(os.path.join(D, 'FONTS', 'MAPFONT.SHP'), 'rb').read()}
         self.options = os.path.join(D, 'GAMEFLOW', 'OPTIONS.IFF')
         self.base = np.array(realspace.load_palette(os.path.join(D, 'PALETTE', 'PALETTE.IFF')), np.uint8)
         self.out, self.factor = out, factor
@@ -197,6 +198,27 @@ def training(art, P):
                             "pilot's discretion.  Refer to area", 'map for enemy positions.']}}
 
 
+# The travel map (OPTTEST.EXE overlay 0xC9, at image 0x5DC8C): the world assembled from seven
+# OPTSHPS tiles (world coordinates = the route points of GAMEFLOW.IFF WRLD/MAPS)
+MAP_TILES = [(134, 0, 0), (128, 177, 37), (129, 177, 237), (130, 497, 37), (131, 497, 237), (132, 0, 200), (133, 183, 0)]
+
+
+def travel_map(art):
+    P = art.palette([('OPTPALS', 0x17)])
+    w, h = 817, 437
+    px = np.zeros((h, w), np.uint8)
+    for idx, x, y in MAP_TILES:
+        s = art.frames('OPTSHPS', idx)[0]
+        m = s.pixels != shape.TRANSPARENT
+        ys, xs = np.nonzero(m)
+        ty, tx = ys + y - s.oy, xs + x - s.ox
+        ok = (ty < h) & (tx < w)
+        px[ty[ok], tx[ok]] = s.pixels[ys[ok], xs[ok]]
+    return {'map': art.save(px, P, 'travel_map'), 'font': font(art, 'MAPFONT', P, 'mapfont'),
+            'colour': '%02x%02x%02x' % tuple(int(c) for c in P[0xf6]), 'width': 3,
+            'scroll_min': [-0x1f1, -0xed], 'box': [70, 60, 250, 140], 'step_ticks': 3, 'stop_ticks': 60, 'end_ticks': 50}
+
+
 def cursors(art, P, name):
     fr = art.frames('MOUSE')
     names = ['cross', 'arrow', 'cross_hot', 'arrow_hot']
@@ -238,6 +260,7 @@ def convert(extracted, out_root, factor=4, log=print):
     dialogs = {'14': saveload(a, screen_palette(a, 14), 0, 'sl_14'),
                '29': saveload(a, screen_palette(a, 29), 21, 'sl_29')}
     screens['training'] = training(a, a.palette([('OBJVIEW', 7)]))
+    screens['travel'] = travel_map(a)
     # the licence for a new pilot
     P = a.palette([('OPTPALS', 0x1e)])
     screens['licence'] = {

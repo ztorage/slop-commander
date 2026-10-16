@@ -297,6 +297,15 @@ entries). The intro is two overlay functions: image offset 0x671A0 (shots 1-8) w
   followed by "," / ", and" / "."; "Altitude: N feet." at (5, 103); "Intelligence reports
   indicate S pilots." at (5, 115). Search and destroy shows four fixed lines and goes to accept.
   The mission is built from `instant.iff`.
+- Travel map (OPTTEST.EXE overlay 0xC9, entry at image 0x5DC8C, route id): the world is seven
+  OPTSHPS tiles under OPTPALS 0x17: 134 at (0, 0), 128 (177, 37), 129 (177, 237), 130 (497, 37),
+  131 (497, 237), 132 (0, 200), 133 (183, 0); route points (GAMEFLOW.IFF WRLD/MAPS `DATA`, x, y,
+  name, 24 bytes each; `SPED` speed, default 0x1000) are in that space. Each leg grows a 3-pixel
+  line of colour 246 by speed / (max + min * 11 / 32) per 4096 every 3 ticks; reached stops get
+  a 2 x 2 marker and their MAPFONT name 5 pixels below; the view starts with the first stop at
+  (160, 160), scrolls with the head of the line when it leaves (70..250, 60..140), and is kept
+  within (-497..0, -237..0) (and y <= -37 when x < -183: the map has no top right). 60 ticks at
+  each stop, 50 at the end; a key ends it.
 - `MOUSE.SHP`: crosshair (11 x 11, hotspot 5, 5) and arrow, each with a highlighted copy.
 
 ## Not yet examined ⬜

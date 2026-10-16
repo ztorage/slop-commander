@@ -133,9 +133,7 @@ func _run(efct: Array, sprite: Dictionary) -> void:
 				if r.get("action") == "ok" and Campaign.load_game(String(r.name)):
 					_next_stage = 0
 			Op.SHOW_MAP:
-				var pts: Array = Campaign.gameflow.get("maps", {}).get(str(v), {}).get("points", [])
-				if pts.size() > 0:
-					await _show_notice("Flying to %s..." % String(pts[-1].name), 2.5)
+				await _travel_map(v)
 			Op.CHECK_BALANCE:
 				if Campaign.cash < 0:
 					await _show_notice("The Wildcats are bankrupt.", 3.0)
@@ -148,6 +146,18 @@ func _run(efct: Array, sprite: Dictionary) -> void:
 					_warned[op] = true
 					_log("unhandled story opcode %d (%d)" % [op, v])
 	_busy = false
+
+
+## The travel map for route `id` (GAMEFLOW.IFF WRLD/MAPS).
+func _travel_map(id: int) -> void:
+	var route: Dictionary = Campaign.gameflow.get("maps", {}).get(str(id), {})
+	var path := GameData.path("frontend/frontend.json")
+	if route.get("points", []).size() < 2 or not FileAccess.file_exists(path) or OS.get_environment("SC_STORY_TEST") != "":
+		return
+	var spec: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path)).screens.travel
+	var m := TravelMap.new().setup(spec, route)
+	add_child(m)
+	await m.finished
 
 
 ## The original save/load dialog, in the skin and palette of the screen it is opened from.

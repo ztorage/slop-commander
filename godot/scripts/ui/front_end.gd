@@ -52,6 +52,15 @@ func _ready() -> void:
 		for c in OS.get_environment("SC_FRONT_CHOICES").split(","):
 			var pc := c.split(":")
 			_choices.append([pc[0], int(pc[1])])
+	if OS.get_environment("SC_TRAVEL_TEST") != "" and Campaign.load_data():
+		var route: Dictionary = Campaign.gameflow.maps[OS.get_environment("SC_TRAVEL_TEST")]
+		var m := TravelMap.new().setup(data.screens.travel, route)
+		add_child(m)
+		m.finished.connect(func(): get_tree().quit())
+		for i in 30:
+			await get_tree().create_timer(1.0).timeout
+			await capture("travel_%02d" % i)
+		return
 	if OS.get_environment("SC_FRONT_TEST") != "":
 		_front_test.call_deferred()
 

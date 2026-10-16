@@ -115,7 +115,7 @@ def export(obj_path, pal, out_dir, factor=4):
         mk = (key, double_sided)
         if mk not in tex_mats:
             label, img, tex = tex_imgs[key]
-            tex_mats[mk] = (g.image_material(label + ('' if double_sided else '_1s'), img, False, False, double_sided), tex)
+            tex_mats[mk] = (g.image_material(label + ('' if double_sided else '_1s'), img, factor == 1, False, double_sided), tex)
         return tex_mats[mk]
 
     verts = np.array([rs.sc_to_godot(v) for v in mesh.verts], np.float32)

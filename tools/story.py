@@ -203,15 +203,16 @@ class Art:
         ys, xs = np.nonzero(mask)
         y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
         entry = {'file': name + '.png', 'x': int(x0 - s.ox), 'y': int(y0 - s.oy), 'w': int(x1 - x0), 'h': int(y1 - y0)}
-        if upscale.AI and self.factor == 4:
-            self._save_ai(s, P, name, (x0, y0, x1, y1), under)
-            return entry
         px = s.pixels[y0:y1, x0:x1]
         rgba = np.zeros(px.shape + (4,), np.uint8)
         rgba[..., :3] = P[px]
         rgba[..., 3] = np.where(px == shape.TRANSPARENT, 0, 255)
-        img = upscale_rgba(Image.fromarray(rgba, 'RGBA'), self.factor)
-        img.save(os.path.join(self.out, name + '.png'), optimize=True)
+        path = os.path.join(self.out, name + '.png')
+        if upscale.AI and upscale.hd_enabled() and upscale.FACTOR == 4:
+            Image.fromarray(upscale._bleed(rgba), 'RGBA').save(path, optimize=True)
+            self._save_ai(s, P, name, (x0, y0, x1, y1), under)
+        else:
+            upscale.save(Image.fromarray(rgba, 'RGBA'), path)
         return entry
 
     MARGIN = 6   # context pixels around a layer for the AI upscaler
@@ -254,8 +255,8 @@ class Art:
         rgba[..., 3] = np.where(idx >= 0, 255, 0)
         rgba = upscale._bleed(rgba)
         out = ai_upscale.upscale_rgba(rgba, own, beneath)
-        f = self.factor
-        Image.fromarray(out[m * f:(h - m) * f, m * f:(w - m) * f], 'RGBA').save(os.path.join(self.out, name + '.png'), optimize=True)
+        f = 4
+        Image.fromarray(out[m * f:(h - m) * f, m * f:(w - m) * f], 'RGBA').save(upscale.hd_path(os.path.join(self.out, name + '.png')), optimize=True)
 
 
 def convert_screens(opts_path, art):

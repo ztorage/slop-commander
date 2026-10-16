@@ -18,10 +18,19 @@ static func texture(file: String, folder := "story/img/") -> Texture2D:
 	var key := folder + file
 	if _textures.has(key):
 		return _textures[key]
-	var img := Image.load_from_file(GameData.path(key))
+	var img := GameData.load_art_image(key)
 	var tex: Texture2D = ImageTexture.create_from_image(img) if img else null
 	_textures[key] = tex
 	return tex
+
+
+static func clear_cache() -> void:
+	_textures.clear()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_ENTER_TREE:
+		texture_filter = GameData.art_filter()
 
 
 ## Save a screenshot to shots/story (automated checks).

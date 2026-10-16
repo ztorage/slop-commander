@@ -7,6 +7,8 @@ shader_type spatial;
 uniform sampler2D color_map : source_color, filter_linear, repeat_disable;  // grid colours (360x360)
 uniform sampler2D tile_ids : filter_nearest, repeat_disable;               // R = upper, G = lower (id/255)
 uniform sampler2DArray tiles : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
+uniform sampler2DArray tiles_crisp : source_color, filter_nearest_mipmap_anisotropic, repeat_disable;  // original graphics
+uniform bool crisp = false;
 uniform float grid_size = 360.0;
 uniform float spacing_m = 304.8;        // 1000 ft between grid vertices
 uniform float tile_fade_start = 6000.0; // metres; tiles fade into the colour map beyond this
@@ -42,7 +44,7 @@ void fragment() {
 	vec3 col = base;
 	float dist = length(world_pos - CAMERA_POSITION_WORLD);
 	if (id < 254.5) {
-		vec4 t = texture(tiles, vec3(f, round(id)));
+		vec4 t = crisp ? texture(tiles_crisp, vec3(f, round(id))) : texture(tiles, vec3(f, round(id)));
 		float fade = 1.0 - smoothstep(tile_fade_start, tile_fade_end, dist);
 		col = mix(base, t.rgb, t.a * fade);
 	}

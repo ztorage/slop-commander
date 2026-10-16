@@ -57,7 +57,7 @@ func _process(delta: float) -> void:
 		_cue += 1
 	if f != _shown:
 		_shown = f
-		var img := Image.load_from_file(GameData.path(DIR + "f%04d.webp" % f))
+		var img := GameData.load_art_image(DIR + "f%04d.webp" % f)
 		if img:
 			_tex = ImageTexture.create_from_image(img)
 		queue_redraw()

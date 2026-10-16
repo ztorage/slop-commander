@@ -18,7 +18,7 @@ ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 import disc, tre_extract
 
-CONVERTER_VERSION = 9
+CONVERTER_VERSION = 10
 
 REQUIRED = ['BIGTRE.TRE', 'LILTRE.TRE', 'VOCLIST.TRE']
 OPTIONAL = ['TOBIGTRE.TRE', 'TOVOCLST.TRE']  # Tactical Operations add-on
@@ -85,6 +85,7 @@ def step_tre(out_cd, out_root):
 
 def step_models(extracted, assets, upscale):
     import export_glb, realspace
+    import upscale as up
     data = os.path.join(extracted, 'BIGTRE', 'DATA')
     pal = realspace.load_palette(os.path.join(data, 'PALETTE', 'PALETTE.IFF'))
     out = os.path.join(assets, 'objects')
@@ -92,8 +93,10 @@ def step_models(extracted, assets, upscale):
     n = 0
     for fn in sorted(os.listdir(objs)):
         try:
-            if export_glb.export(os.path.join(objs, fn), pal, out, upscale):
+            if export_glb.export(os.path.join(objs, fn), pal, out, 1):
                 n += 1
+                if up.hd_enabled():
+                    export_glb.export(os.path.join(objs, fn), pal, os.path.dirname(up.hd_path(os.path.join(out, fn))), up.FACTOR)
         except Exception as e:  # keep going; report at the end
             log(f'  model {fn} failed: {e!r}')
     log(f'converted {n} models')
@@ -166,7 +169,9 @@ def main():
     ap.add_argument('source', nargs='?', help='.cue/.img/.bin/.iso or folder of your Strike Commander CD')
     ap.add_argument('--skip-disc', action='store_true', help='reuse extracted/ instead of re-reading the disc')
     ap.add_argument('--only', help='comma-separated conversion steps: ' + ','.join(s for s, _ in STEPS))
-    ap.add_argument('--upscale', type=int, default=4, help='texture upscale factor (1, 2 or 4)')
+    ap.add_argument('--upscale', type=int, default=4,
+                    help='also write an upscaled copy of all art to gamedata/hd (2 or 4); 1 = originals only')
+    ap.add_argument('--no-upscale', action='store_true', help='originals only (same as --upscale 1)')
     ap.add_argument('--ai', action='store_true',
                     help='AI-upscale the 2D story art (de-dither + 4x model, local; needs tools/requirements-ai.txt)')
     ap.add_argument('--out', default=os.path.join(ROOT, 'gamedata'), help='converted asset folder (default: gamedata/)')
@@ -188,12 +193,17 @@ def main():
         step_tre(os.path.join(extracted, 'cd'), extracted)
         manifest = {'edition': edition, 'tre_sha1': hashes}
 
+    import upscale
+    upscale.ASSETS = assets
+    upscale.FACTOR = 1 if a.no_upscale else a.upscale
+    manifest['hd'] = upscale.FACTOR if upscale.FACTOR > 1 else 0
+    manifest.pop('upscaler', None)
     if a.ai:
-        import ai_upscale, upscale
+        import ai_upscale
         if not ai_upscale.available():
             sys.exit('error: --ai needs PyTorch and spandrel: pip install -r tools/requirements-ai.txt')
-        if a.upscale != 4:
-            sys.exit('error: --ai upscales 4x; use --upscale 4')
+        if upscale.FACTOR != 4:
+            sys.exit('error: --ai makes the 4x upscaled set; it cannot be combined with --no-upscale or --upscale 2')
         upscale.AI = True
         manifest['upscaler'] = 'ai:' + ai_upscale.PIPELINE
     only = set(a.only.split(',')) if a.only else None

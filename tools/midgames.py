@@ -104,7 +104,7 @@ class Assets:
             rgba[..., :3] = P[px]
             rgba[..., 3] = np.where(px == shape.TRANSPARENT, 0, 255)
             name = f'{pk.lower()}{idx}_{frame}_{pal_key}.png'
-            upscale.upscale_rgba(Image.fromarray(rgba, 'RGBA'), self.factor).save(os.path.join(self.out, name), optimize=True)
+            upscale.save(Image.fromarray(rgba, 'RGBA'), os.path.join(self.out, name))
             self.images.append({'file': name, 'x': int(x0 - s.ox), 'y': int(y0 - s.oy), 'w': int(x1 - x0), 'h': int(y1 - y0)})
             out = len(self.images) - 1
         self._saved[key] = out
@@ -154,7 +154,7 @@ class Assets:
         rgba = np.zeros(px.shape + (4,), np.uint8)
         rgba[..., :3] = P[px]
         rgba[..., 3] = np.where(px == shape.TRANSPARENT, 0, 255)
-        upscale.upscale_rgba(Image.fromarray(rgba, 'RGBA'), self.factor).save(os.path.join(self.out, name + '.png'), optimize=True)
+        upscale.save(Image.fromarray(rgba, 'RGBA'), os.path.join(self.out, name + '.png'))
         return {'file': name + '.png', 'x': int(x0), 'y': int(y0), 'w': int(x1 - x0), 'h': int(y1 - y0)}
 
 

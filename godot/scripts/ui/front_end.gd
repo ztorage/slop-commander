@@ -275,6 +275,10 @@ func _unhandled_key_input(ev: InputEvent) -> void:
 	if k.keycode == KEY_F12:
 		_dev_menu()
 		return
+	if k.keycode == KEY_F11:                         # upscaled <-> original graphics
+		GameData.set_upscaled(not GameData.upscaled)
+		texture_filter = GameData.art_filter()
+		return
 	if mode == "licence":
 		_licence_key(k)
 		return

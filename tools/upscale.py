@@ -1,5 +1,10 @@
 """Texture upscaling for the remake.
 
+Every converter writes the original art at its own resolution (the exact pixels from the disc)
+and, when upscaling is on, an upscaled copy of the same file under gamedata/hd/ (same relative
+path); the game uses the copy when the player wants upscaled graphics and it exists, and falls
+back to the original otherwise. `save()` does both.
+
 Default is an edge-aware pixel-art scaler (EPX/Scale2x applied repeatedly) followed by a
 light smoothing pass, which keeps the hand-drawn 1993 texel art crisp instead of blurry.
 If `realesrgan-ncnn-vulkan` is on PATH it is used instead (ML super-resolution).
@@ -10,6 +15,38 @@ from PIL import Image, ImageFilter
 
 REALESRGAN = shutil.which('realesrgan-ncnn-vulkan')
 AI = False      # set by extract.py --ai: callers that pass context use tools/ai_upscale.py
+ASSETS = ''     # gamedata root (set by extract.py); the upscaled set goes to ASSETS/hd
+FACTOR = 4      # 1: originals only
+
+
+def hd_enabled():
+    return FACTOR > 1 and bool(ASSETS)
+
+
+def hd_path(path):
+    """Where the upscaled copy of a gamedata file goes."""
+    p = os.path.join(ASSETS, 'hd', os.path.relpath(os.path.abspath(path), os.path.abspath(ASSETS)))
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    return p
+
+
+def save(img, path, **kw):
+    """Save 2D art: the original pixels at `path`, and (upscaling on) the upscaled copy at
+    hd/<path> - through the AI pipeline with --ai."""
+    img = Image.fromarray(_bleed(np.asarray(img.convert('RGBA'))), 'RGBA')
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    if path.lower().endswith('.png'):
+        kw.setdefault('optimize', True)
+    rgb_only = path.lower().endswith(('.webp', '.jpg')) and img.getchannel('A').getextrema()[0] == 255
+    (img.convert('RGB') if rgb_only else img).save(path, **kw)
+    if not hd_enabled():
+        return
+    if AI and FACTOR == 4:
+        import ai_upscale
+        up = Image.fromarray(ai_upscale.upscale_rgba(np.asarray(img)), 'RGBA')
+    else:
+        up = upscale_rgba(img, FACTOR)
+    (up.convert('RGB') if rgb_only else up).save(hd_path(path), **kw)
 
 
 def _scale2x(a):

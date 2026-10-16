@@ -79,7 +79,7 @@ class Art:
         rgba = np.zeros(px.shape + (4,), np.uint8)
         rgba[..., :3] = P[px]
         rgba[..., 3] = np.where(px == shape.TRANSPARENT, 0, 255)
-        upscale.upscale_rgba(Image.fromarray(rgba, 'RGBA'), self.factor).save(os.path.join(self.out, name + '.png'), optimize=True)
+        upscale.save(Image.fromarray(rgba, 'RGBA'), os.path.join(self.out, name + '.png'))
         return {'file': name + '.png', 'x': int(x + x0), 'y': int(y + y0), 'w': int(x1 - x0), 'h': int(y1 - y0)}
 
     def shape(self, s, P, name, x=0, y=0):

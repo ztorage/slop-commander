@@ -19,6 +19,7 @@ var hud_zoom := false            # front view zoomed onto the HUD (art view 4)
 var right_mfd := 0           # 0 weapons, 1 damage
 var layout := {}
 var _dir := ""
+var _rel := ""
 var _views: Array[Texture2D] = []
 var _tex := {}               # file -> Texture2D
 var _font: Font
@@ -31,7 +32,8 @@ func ejecting() -> bool:
 
 static func create(cockpit_name: String) -> Cockpit:
 	var c := Cockpit.new()
-	c._dir = GameData.path("cockpits/" + cockpit_name)
+	c._rel = "cockpits/" + cockpit_name
+	c._dir = GameData.path(c._rel)
 	c.layout = JSON.parse_string(FileAccess.get_file_as_string(c._dir.path_join("cockpit.json")))
 	for v in c.layout.views:
 		c._views.append(c._texture(v.file))
@@ -41,12 +43,13 @@ static func create(cockpit_name: String) -> Cockpit:
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	texture_filter = GameData.art_filter()
 	_font = ThemeDB.fallback_font
 
 
 func _texture(file: String) -> Texture2D:
 	if not _tex.has(file):
-		var img := Image.load_from_file(_dir.path_join(file))
+		var img := GameData.load_art_image(_rel.path_join(file))
 		img.generate_mipmaps()
 		_tex[file] = ImageTexture.create_from_image(img)
 	return _tex[file]

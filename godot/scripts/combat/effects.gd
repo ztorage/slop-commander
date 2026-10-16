@@ -12,13 +12,14 @@ static var _puff: Texture2D
 static func _load(sprite_name: String) -> Dictionary:
 	if _frames.has(sprite_name):
 		return _frames[sprite_name]
-	var dir := GameData.path("sprites/" + sprite_name)
+	var rel := "sprites/" + sprite_name
+	var dir := GameData.path(rel)
 	var out := {}
 	if FileAccess.file_exists(dir.path_join("sprite.json")):
 		var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join("sprite.json")))
 		var tex: Array[Texture2D] = []
 		for i in meta.frames.size():
-			var img := Image.load_from_file(dir.path_join("frame_%d.png" % i))
+			var img := GameData.load_art_image(rel.path_join("frame_%d.png" % i))
 			tex.append(ImageTexture.create_from_image(img))
 		out = {"textures": tex, "meta": meta}
 	_frames[sprite_name] = out
@@ -35,7 +36,8 @@ static func explosion(parent: Node, sprite_name: String, pos: Vector3, size_m: f
 	spr.shaded = false
 	spr.double_sided = true
 	spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
-	spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if GameData.upscaled \
+		else BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	var max_px := 1.0
 	for t in data.textures:
 		max_px = maxf(max_px, maxf(t.get_width(), t.get_height()))

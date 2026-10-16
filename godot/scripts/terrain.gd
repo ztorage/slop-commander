@@ -59,12 +59,14 @@ func load_theatre(theatre_name: String, with_objects := true) -> bool:
 	mat.set_shader_parameter("color_map", ImageTexture.create_from_image(color_img))
 	mat.set_shader_parameter("tile_ids", ImageTexture.create_from_image(id_img))
 	mat.set_shader_parameter("tiles", _tile_array())
+	mat.set_shader_parameter("tiles_crisp", _tile_array())
+	mat.set_shader_parameter("crisp", not GameData.upscaled)
 	mat.set_shader_parameter("grid_size", float(grid_size))
 	mat.set_shader_parameter("spacing_m", spacing_m)
 	_build_chunks(mat)
 	_build_skirt(color_img)
 
-	var overlays := GameData.load_glb(dir.path_join("overlays.glb"))
+	var overlays := GameData.load_glb(GameData.art("terrain".path_join(theatre_name).path_join("overlays.glb")))
 	if overlays:
 		add_child(overlays)
 	if with_objects:
@@ -158,7 +160,7 @@ func _build_skirt(color_img: Image) -> void:
 func _tile_array() -> Texture2DArray:
 	if _tiles_cache:
 		return _tiles_cache
-	var atlas := Image.load_from_file(GameData.path("terrain/tiles.png"))
+	var atlas := GameData.load_art_image("terrain/tiles.png")
 	var px := atlas.get_width() / 16
 	var layers: Array[Image] = []
 	for i in 256:

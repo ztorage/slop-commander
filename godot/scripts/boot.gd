@@ -73,6 +73,16 @@ func _show_menu() -> void:
 	ed.text = "Game data: %s" % GameData.manifest.get("edition", "unrecognised edition")
 	ed.modulate = Color(0.7, 0.75, 0.8)
 	box.add_child(ed)
+	var gfx := Button.new()
+	var label_gfx := func() -> String:
+		var mode := "upscaled" if GameData.upscaled else "original sprites"
+		return "Graphics: %s%s  (click to switch)" % [mode, "" if GameData.has_upscaled() else " — no upscaled set extracted"]
+	gfx.text = label_gfx.call()
+	gfx.add_theme_font_size_override("font_size", 18)
+	gfx.pressed.connect(func():
+		GameData.set_upscaled(not GameData.upscaled)
+		gfx.text = label_gfx.call())
+	box.add_child(gfx)
 	for item in MENU:
 		var b := Button.new()
 		b.text = item[0]

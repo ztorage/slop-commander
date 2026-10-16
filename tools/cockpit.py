@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import iff, shape, realspace as rs
-from upscale import upscale_rgba
+import upscale
 
 # In-panel MFD screens and HUD glass are painted into the art rather than described by
 # chunks; measured from the F-16 front view (320x200 coordinates, inclusive).
@@ -33,7 +33,7 @@ def to_rgba(s, P):
 def save_shapes(shapes, P, out, prefix, factor):
     meta = []
     for i, s in enumerate(shapes):
-        upscale_rgba(to_rgba(s, P), factor).save(os.path.join(out, f'{prefix}_{i}.png'), optimize=True)
+        upscale.save(to_rgba(s, P), os.path.join(out, f'{prefix}_{i}.png'))
         meta.append({'file': f'{prefix}_{i}.png', 'w': s.w, 'h': s.h, 'hotspot': [s.ox, s.oy]})
     return meta
 
@@ -47,7 +47,7 @@ def convert_one(path, out, P, factor):
     name = os.path.splitext(os.path.basename(path))[0]
     os.makedirs(out, exist_ok=True)
     layout = dict(KNOWN_LAYOUT.get(name, DEFAULT_LAYOUT))
-    info = {'name': name, 'scale': factor, 'screen': [320, 200], **layout}
+    info = {'name': name, 'screen': [320, 200], **layout}
 
     info['views'] = save_shapes(shape.decode_any(root.first(b'ARTP').data), P, out, 'view', factor)
     if root.first(b'EJEC'):

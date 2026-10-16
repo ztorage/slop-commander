@@ -18,6 +18,7 @@ import numpy as np
 from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import iff, lzw, pak, realspace as rs
+import upscale
 from upscale import upscale_rgba
 from export_glb import GlbBuilder
 
@@ -143,15 +144,17 @@ def remove_split_guide(px):
 
 
 def build_tile_atlas(tiles, pal, out_path, factor):
-    atlas = Image.new('RGBA', (16 * TILE_PX, 16 * TILE_PX), (0, 0, 0, 0))
+    """16 x 16 atlas of the tiles; factor 1 keeps the original 64-pixel tiles."""
+    size = TILE_PX * factor // 4
+    atlas = Image.new('RGBA', (16 * size, 16 * size), (0, 0, 0, 0))
     for i, px in enumerate(tiles[:255]):
         if px is None:
             continue
         px = remove_split_guide(px)
         img = upscale_rgba(indexed_to_rgba(px, pal), factor)
-        if img.size != (TILE_PX, TILE_PX):
-            img = img.resize((TILE_PX, TILE_PX), Image.LANCZOS)
-        atlas.paste(img, ((i % 16) * TILE_PX, (i // 16) * TILE_PX))
+        if img.size != (size, size):
+            img = img.resize((size, size), Image.NEAREST if factor == 1 else Image.LANCZOS)
+        atlas.paste(img, ((i % 16) * size, (i // 16) * size))
     atlas.save(out_path, optimize=True)
 
 
@@ -164,7 +167,7 @@ def build_overlays_glb(overlays, acc_imgs, pal, out_path, factor):
         if key not in mats:
             if key[0] == 't':
                 img = upscale_rgba(indexed_to_rgba(acc_imgs[tex], pal), factor)
-                mats[key] = (g.image_material(f'acc{tex}', img, False, True, True), acc_imgs[tex].shape)
+                mats[key] = (g.image_material(f'acc{tex}', img, factor == 1, True, True), acc_imgs[tex].shape)
             else:
                 c = pal[kind] if kind < 256 else (128, 128, 128)
                 mats[key] = (g.image_material(f'col{kind}', Image.new('RGBA', (4, 4), c + (255,)), True, False, True), None)
@@ -231,7 +234,10 @@ def convert(extracted, out_root, factor=4, log=print):
     ranges = load_ranges(os.path.join(data, 'PALETTE', 'PALETTE.IFF'))
     txm = os.path.join(extracted, 'LILTRE', 'DATA', 'TXM')
     os.makedirs(out_root, exist_ok=True)
-    build_tile_atlas(load_tile_images(os.path.join(txm, 'TXMPACK.PAK')), pal, os.path.join(out_root, 'tiles.png'), factor)
+    tiles = load_tile_images(os.path.join(txm, 'TXMPACK.PAK'))
+    build_tile_atlas(tiles, pal, os.path.join(out_root, 'tiles.png'), 1)
+    if upscale.hd_enabled():
+        build_tile_atlas(tiles, pal, upscale.hd_path(os.path.join(out_root, 'tiles.png')), upscale.FACTOR)
     acc = load_tile_images(os.path.join(txm, 'ACCPACK.PAK'))
     pal_img = Image.new('RGB', (16, 16)); pal_img.putdata(pal); pal_img.save(os.path.join(out_root, 'palette.png'))
     theatres = []
@@ -251,7 +257,9 @@ def convert(extracted, out_root, factor=4, log=print):
         with open(os.path.join(out, 'objects.json'), 'w') as f:
             json.dump(objs, f, indent=0)
         overlays = decode_overlays(entries[4][1])
-        has_overlays = build_overlays_glb(overlays, acc, pal, os.path.join(out, 'overlays.glb'), factor)
+        has_overlays = build_overlays_glb(overlays, acc, pal, os.path.join(out, 'overlays.glb'), 1)
+        if has_overlays and upscale.hd_enabled():
+            build_overlays_glb(overlays, acc, pal, upscale.hd_path(os.path.join(out, 'overlays.glb')), upscale.FACTOR)
         with open(os.path.join(out, 'runways.json'), 'w') as f:
             json.dump(runway_list(overlays), f, indent=1)
         theatres.append({'name': name, 'objects': len(objs), 'overlays': has_overlays,

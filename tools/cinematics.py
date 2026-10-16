@@ -122,14 +122,6 @@ def decode(flx):
         yield pal[screen]
 
 
-def _upscale(rgb):
-    rgba = np.dstack([rgb, np.full(rgb.shape[:2], 255, np.uint8)])
-    if upscale.AI:
-        import ai_upscale
-        return ai_upscale.upscale_rgba(rgba)[..., :3]
-    return np.asarray(upscale.upscale_rgba(Image.fromarray(rgba, 'RGBA'), 4).convert('RGB'))
-
-
 def convert(extracted, out_root, log=print):
     base = os.path.join(extracted, 'BIGTRE', 'DATA', 'FLIC')
     flx_path = os.path.join(base, 'THEFLIC.FLX')
@@ -140,7 +132,7 @@ def convert(extracted, out_root, log=print):
     os.makedirs(out, exist_ok=True)
     frames = 0
     for rgb in decode(open(flx_path, 'rb').read()):
-        Image.fromarray(_upscale(rgb)).save(os.path.join(out, f'f{frames:04d}.webp'), quality=88, method=4)
+        upscale.save(Image.fromarray(rgb), os.path.join(out, f'f{frames:04d}.webp'), quality=88, method=4)
         frames += 1
     # sound: clips and the General MIDI score
     entries = [e for _, e in pak.read_pak(open(os.path.join(base, 'FLIC.PAK'), 'rb').read())]

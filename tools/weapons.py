@@ -11,7 +11,7 @@ import json, os, struct, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import iff, shape, realspace as rs
-from upscale import upscale_rgba
+import upscale
 from cockpit import to_rgba
 
 KINDS = (b'MISS', b'TRCR', b'BOMB', b'DECY', b'DURD')
@@ -78,7 +78,7 @@ def convert(objects_dir, out_root, factor=4, log=print):
             os.makedirs(out, exist_ok=True)
             meta = {'name': name, 'frames': []}
             for i, s in enumerate(frames):
-                upscale_rgba(to_rgba(s, P), factor).save(os.path.join(out, f'frame_{i}.png'), optimize=True)
+                upscale.save(to_rgba(s, P), os.path.join(out, f'frame_{i}.png'))
                 meta['frames'].append({'w': s.w, 'h': s.h, 'hotspot': [s.ox, s.oy]})
             if anim.first(b'INFO'):
                 meta['info'] = list(struct.unpack_from('<2H', anim.first(b'INFO').data))

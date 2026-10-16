@@ -7,6 +7,10 @@ upscaled textures and modern rendering.
 Strike Commander CD. The included tools read your disc and convert its data locally; the
 converted files are gitignored and are never part of an exported build.
 
+## Attribution
+
+This work has been made possible, in large part, thanks to [Remi Leonard](https://remileonard.github.io/), and [Fabien Sanglard](https://fabiensanglard.net/), specifically their work on [libRealSpace](https://github.com/remileonard/libRealSpace), which was used as reference for Claude when deciphering some of the file formats and data structures.
+
 ## Setup
 
 ```sh

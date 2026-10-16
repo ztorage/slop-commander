@@ -21,6 +21,7 @@ var _runway_index := 0
 var _acc := 0.0
 var _power := 0.0                 # 0..1 military throttle, 1..2 afterburner stages
 var _chute: Node3D
+var _view_before_death := CameraRig.View.CHASE
 var mission: MissionRunner
 var mission_name := ""
 var nav_map: NavMap
@@ -52,7 +53,7 @@ func _ready() -> void:
 		scenario = "strike"
 	if _test == "combat":
 		scenario = "dogfight"
-		bandits = 1
+		bandits = int(_env("SC_BANDITS", "1"))
 	var mission_data := {}
 	if scenario == "mission":
 		mission_name = _env("SC_MISSION", "MISN-1A")
@@ -72,6 +73,8 @@ func _ready() -> void:
 	terrain.load_theatre(theatre, true)
 	_runways = JSON.parse_string(FileAccess.get_file_as_string(GameData.path("terrain/%s/runways.json" % theatre)))
 	world.aircraft_destroyed.connect(_on_destroyed)
+	world.weapon_released.connect(func(w, by): if by == player: cam.weapon_node = w)
+	world.ground_destroyed.connect(func(u): if u.last_attacker == player: cam.victim_node = u)
 	player = Aircraft.create(aircraft_name)
 	player.team = 0
 	world.add_aircraft(player)
@@ -161,7 +164,7 @@ func start() -> void:
 		_chute.queue_free()
 		_chute = null
 	cam.target = player
-	cam.orbit_node = null
+	cam.reset_view(_view_before_death)
 	if scenario == "strike":
 		_setup_strike()
 		return
@@ -235,6 +238,7 @@ func reset_on_runway(i: int) -> void:
 
 func reset_in_air() -> void:
 	hud.message = ""
+	cam.reset_view(_view_before_death)
 	var p := player.fm.position if player.alive else Vector3.ZERO
 	p.y = maxf(terrain.height_at(p.x, p.z), 0.0) + 1500.0
 	player.place(p, 0.0, 200.0, false)
@@ -282,6 +286,11 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	cam.update_view(delta)
+	# the original drew distant aircraft larger than life so they stay visible; same here
+	for a in world.aircraft:
+		if a != player:
+			var d := a.global_position.distance_to(cam.global_position)
+			a.visual_scale = clampf(pow(d / 800.0, 0.6), 1.0, 6.0)
 
 
 func _on_mission_over(success: bool, reason: String) -> void:
@@ -290,6 +299,8 @@ func _on_mission_over(success: bool, reason: String) -> void:
 
 
 func _on_destroyed(a: Aircraft) -> void:
+	if a != player and a.last_attacker == player:
+		cam.victim_node = a
 	if _test == "combat" and a == player:
 		print("EVENT %.1f: player destroyed (%s)" % [_test_t, a.death_reason])
 		cam.orbit_node = a
@@ -299,6 +310,7 @@ func _on_destroyed(a: Aircraft) -> void:
 		if player.ejected:
 			return
 		hud.message = "%s   —   Ctrl+R: restart on runway   Shift+R: restart airborne" % ("SHOT DOWN" if a.death_reason == "shot down" else "CRASHED: " + player.fm.crash_reason.to_upper())
+		_remember_view()
 		cam.view = CameraRig.View.ORBIT
 		return
 	if mission:
@@ -318,6 +330,11 @@ func _on_destroyed(a: Aircraft) -> void:
 		get_tree().create_timer(3.0).timeout.connect(func(): if hud.message == "SPLASH ONE!": hud.message = "")
 
 
+func _remember_view() -> void:
+	if cam.view in CameraRig.CYCLE and cam.view != CameraRig.View.ORBIT:
+		_view_before_death = cam.view
+
+
 func eject() -> void:
 	if player.ejected or not player.alive:
 		return
@@ -334,6 +351,7 @@ func eject() -> void:
 		add_child(_chute)
 		_chute.global_position = player.global_position + Vector3.UP * 20.0
 		cam.orbit_node = _chute
+	_remember_view()
 	cam.view = CameraRig.View.ORBIT
 	hud.message = "EJECTED   —   Ctrl+R: restart on runway   Shift+R: restart airborne"
 
@@ -401,17 +419,29 @@ func _unhandled_input(ev: InputEvent) -> void:
 		elif k == KEY_I and ev.ctrl_pressed and cam.cockpit:
 			cam.cockpit.art_enabled = not cam.cockpit.art_enabled
 		elif k == KEY_F1:
-			cam.view = CameraRig.View.COCKPIT_FRONT
+			cam.set_view(CameraRig.View.COCKPIT_FRONT)   # again: zoom onto the HUD
 		elif k == KEY_F2:
-			cam.view = CameraRig.View.CHASE
+			cam.set_view(CameraRig.View.CHASE)
 		elif k == KEY_F3:
-			cam.view = CameraRig.View.COCKPIT_LEFT
+			cam.set_view(CameraRig.View.COCKPIT_LEFT)
 		elif k == KEY_F4:
-			cam.view = CameraRig.View.COCKPIT_RIGHT
+			cam.set_view(CameraRig.View.COCKPIT_RIGHT)
 		elif k == KEY_F5:
-			cam.view = CameraRig.View.COCKPIT_REAR
+			cam.set_view(CameraRig.View.COCKPIT_REAR)
 		elif k == KEY_F6:
-			cam.view = CameraRig.View.ORBIT
+			cam.set_view(CameraRig.View.ORBIT)
+		elif k == KEY_F9:   # victim camera: the current target, else the last thing you destroyed
+			if w.target and is_instance_valid(w.target) and w.target.get("alive") == true:
+				cam.victim_node = w.target
+			cam.set_view(CameraRig.View.VICTIM)
+		elif k == KEY_Z:
+			cam.toggle_zoom()
+		elif k == KEY_F10:
+			cam.set_view(CameraRig.View.WEAPON)
+		elif k == KEY_Y:
+			if not cam.is_cockpit():
+				cam.set_view(CameraRig.View.COCKPIT_FRONT)
+			cam.padlock = not cam.padlock and w.target != null
 		elif k == KEY_BRACKETLEFT:
 			cam.cycle(-1)
 		elif k == KEY_BRACKETRIGHT:
@@ -435,11 +465,11 @@ func _unhandled_input(ev: InputEvent) -> void:
 	elif ev.is_action_pressed("reset_runway"):
 		start()
 	elif ev.is_action_pressed("view_cockpit"):
-		cam.view = CameraRig.View.COCKPIT_FRONT
+		cam.set_view(CameraRig.View.COCKPIT_FRONT)
 	elif ev.is_action_pressed("view_chase"):
-		cam.view = CameraRig.View.CHASE
+		cam.set_view(CameraRig.View.CHASE)
 	elif ev.is_action_pressed("view_orbit"):
-		cam.view = CameraRig.View.ORBIT
+		cam.set_view(CameraRig.View.ORBIT)
 
 
 # ---------------------------------------------------------------- automated tests
@@ -620,16 +650,51 @@ func _combat_test(delta: float) -> void:
 			player.weapons.target != null, player.ai._state,
 			str(int(b.hp)) if b else "-", str(int(b.global_position.distance_to(player.global_position))) if b else "-",
 			b.ai._state if b and b.ai else "-", world.missiles.size()])
+	if OS.get_environment("SC_CAM_TEST") != "":
+		_camera_tour()
+		return
 	var plan := {5.0: CameraRig.View.CHASE, 20.0: CameraRig.View.COCKPIT_FRONT, 35.0: CameraRig.View.CHASE,
 		50.0: CameraRig.View.COCKPIT_FRONT, 65.0: CameraRig.View.ORBIT}
 	if world.aircraft.filter(func(x): return x.team == 1 and not x.alive).is_empty():
 		_test_views(plan)
 	var bandits_alive := world.aircraft.filter(func(x): return x.team == 1 and x.alive).size()
-	if t > 90.0 or not player.alive or (bandits_alive == 0 and not _test_shots.has("end")):
+	var linger := float(_env("SC_TEST_LINGER", "2"))
+	if t > float(_env("SC_TEST_SECONDS", "90")) or not player.alive or (bandits_alive == 0 and not _test_shots.has("end")):
 		if not _test_shots.has("end"):
 			_test_shots["end"] = true
 			print("RESULT t=%.1f player_alive=%s bandits_alive=%d" % [t, player.alive, bandits_alive])
-			get_tree().create_timer(2.0).timeout.connect(get_tree().quit)
+			get_tree().create_timer(linger).timeout.connect(get_tree().quit)
+
+
+## Camera checks: far-aircraft scale, HUD zoom, padlock, off-screen target box, weapon/victim cams.
+func _camera_tour() -> void:
+	var steps := [
+		[2.0, "far_chase", func(): cam.set_view(CameraRig.View.CHASE)],
+		[4.0, "hud_zoom", func():
+			cam.set_view(CameraRig.View.COCKPIT_FRONT)
+			cam.set_view(CameraRig.View.COCKPIT_FRONT)],
+		[6.0, "front_target", func(): cam.set_view(CameraRig.View.COCKPIT_FRONT)],
+		[16.0, "padlock", func(): cam.padlock = player.weapons.target != null],
+		[18.0, "edge_box", func():
+			cam.padlock = false
+			cam.free_look = Vector2(1.3, 0.1)],
+		[19.0, "edge_box_hud", func():
+			cam.free_look = Vector2.ZERO
+			cam.set_view(CameraRig.View.CHASE)],
+		[21.0, "weapon_cam", func(): cam.set_view(CameraRig.View.WEAPON)],
+		[30.0, "victim_cam", func():
+			cam.victim_node = world.aircraft[1] if world.aircraft.size() > 1 and world.aircraft[1].alive else cam.victim_node
+			cam.set_view(CameraRig.View.VICTIM)],
+	]
+	for st in steps:
+		if _test_t >= st[0] - 0.15 and not _test_shots.has(st[1] + "_set"):
+			_test_shots[st[1] + "_set"] = true
+			st[2].call()
+		if _test_t >= st[0] and not _test_shots.has(st[1]):
+			_test_shots[st[1]] = true
+			print("CAM %s view=%d zoom=%s padlock=%s target=%s weapon=%s victim=%s" % [st[1], cam.view, cam.hud_zoom, cam.padlock,
+				player.weapons.target != null, is_instance_valid(cam.weapon_node), is_instance_valid(cam.victim_node)])
+			_shot("cam_" + st[1])
 
 
 func _test_views(plan: Dictionary) -> void:

@@ -93,14 +93,22 @@ def xmidi_events(form):
         p += 8 + size
 
 
-def evnt_to_smf(evnt):
-    """XMIDI EVNT -> single-track Standard MIDI File. XMIDI runs at 120 ticks per second, uses
-    7-bit summed delays and note-ons carrying their own duration (no note-offs)."""
-    events = []        # (abs_tick, order, bytes)
+def parse_evnt(evnt):
+    """XMIDI EVNT -> list of (tick, order, midi bytes) at 120 ticks/s (note-ons expanded into
+    note-on/off pairs), plus markers: tempo / time-signature changes and FOR/NEXT loop points."""
+    events, marks = [], {'tempo': [], 'tsig': [], 'for': None, 'next': None, 'end': 0}
     t, p, n = 0, 0, len(evnt)
+
+    def varlen(q):
+        v = 0
+        while True:
+            c = evnt[q]; q += 1
+            v = (v << 7) | (c & 0x7F)
+            if c < 0x80:
+                return v, q
     while p < n:
         b = evnt[p]
-        if b < 0x80:   # delay: sum of bytes until one < 0x7F
+        if b < 0x80:   # delay: sum of bytes, a 0x7F continues
             while p < n and evnt[p] < 0x80:
                 t += evnt[p]
                 if evnt[p] != 0x7F:
@@ -113,57 +121,110 @@ def evnt_to_smf(evnt):
         kind = status & 0xF0
         if status == 0xFF:
             mtype = evnt[p]
-            length, q = 0, p + 1
-            while True:
-                c = evnt[q]; q += 1
-                length = (length << 7) | (c & 0x7F)
-                if c < 0x80:
-                    break
+            length, q = varlen(p + 1)
             meta = evnt[q:q + length]
             p = q + length
             if mtype == 0x2F:
                 break
             if mtype == 0x51:
-                continue  # XMIDI tempo is fixed; drop tempo changes
+                marks['tempo'].append((t, int.from_bytes(meta, 'big')))
+                continue  # XMIDI playback is a fixed 120 Hz; tempo only drives beat/bar counting
+            if mtype == 0x58:
+                marks['tsig'].append((t, meta[0], 2 ** meta[1]))
             events.append((t, 1, bytes([0xFF, mtype]) + _varlen(len(meta)) + meta))
         elif status in (0xF0, 0xF7):
-            length, q = 0, p
-            while True:
-                c = evnt[q]; q += 1
-                length = (length << 7) | (c & 0x7F)
-                if c < 0x80:
-                    break
+            length, q = varlen(p)
             p = q + length
         elif kind == 0x90:
             note, vel = evnt[p], evnt[p + 1]
-            p += 2
-            dur, shift = 0, 0
-            dur_bytes = []
-            while True:
-                c = evnt[p]; p += 1
-                dur_bytes.append(c)
-                if c < 0x80:
-                    break
-            for c in dur_bytes:
-                dur = (dur << 7) | (c & 0x7F)
-            events.append((t, 1, bytes([status, note, vel])))
+            dur, p = varlen(p + 2)
+            events.append((t, 2, bytes([status, note, vel])))
             events.append((t + dur, 0, bytes([0x80 | (status & 0x0F), note, 0])))
         elif kind in (0xC0, 0xD0):
             events.append((t, 1, bytes([status, evnt[p]])))
             p += 1
         else:
-            events.append((t, 1, bytes([status, evnt[p], evnt[p + 1]])))
+            ctl, val = evnt[p], evnt[p + 1]
             p += 2
-    events.sort(key=lambda e: (e[0], e[1]))
+            if kind == 0xB0 and ctl == 116 and marks['for'] is None:
+                marks['for'] = t
+            elif kind == 0xB0 and ctl == 117 and marks['for'] is not None and marks['next'] is None:
+                marks['next'] = t
+            if kind == 0xB0 and 110 <= ctl <= 120:
+                continue   # AIL/XMIDI control markers, not musical
+            events.append((t, 1, bytes([status, ctl, val])))
+    marks['end'] = t
+    return events, marks
+
+
+def unroll(events, marks):
+    f, nx = marks['for'], marks['next']
+    if f is None or nx is None or nx <= f:
+        return events, max([e[0] for e in events] + [marks['end']]), None
+    body = nx - f
+    # pair note-ons with their offs so the second pass keeps each note's own duration
+    out = []
+    pending = {}
+    for e in sorted(events, key=lambda e: (e[0], e[1])):
+        out.append(e)
+    second = []
+    ons = [(i, e) for i, e in enumerate(events) if (e[2][0] & 0xF0) == 0x90]
+    for e in events:
+        k = e[2][0] & 0xF0
+        if f <= e[0] < nx and k != 0x80:
+            second.append((e[0] + body, e[1], e[2]))
+    # note-offs: each note-on at index i is followed in `events` by its off at index i + 1
+    for i, e in enumerate(events):
+        if (e[2][0] & 0xF0) == 0x90 and f <= e[0] < nx and i + 1 < len(events):
+            off = events[i + 1]
+            second.append((off[0] + body, off[1], off[2]))
+    keep = [e for e in out if e[0] < nx or (e[2][0] & 0xF0) == 0x80]
+    return keep + second, nx + body, nx
+
+
+def bar_ticks(marks, end_tick, loop_from=None, loop_to=None):
+    """Bar start ticks over [0, end_tick] from the tempo (µs per quarter) and time signature
+    events, the way the original driver counts measures."""
+    tempos = sorted(marks['tempo']) or [(0, 500000)]
+    tsigs = sorted(marks['tsig']) or [(0, 4, 4)]
+    if loop_from is not None:   # the unrolled second body repeats the body's changes
+        body = loop_to - loop_from
+        tempos += [(t + body, v) for t, v in marks['tempo'] if loop_from <= t < loop_to]
+        tsigs += [(t + body, a, b) for t, a, b in marks['tsig'] if loop_from <= t < loop_to]
+        tempos.sort(); tsigs.sort()
+    bars, t = [], 0.0
+    while t < end_tick:
+        bars.append(round(t, 2))
+        tempo = [v for tt, v in tempos if tt <= t + 1e-6][-1]
+        num, den = [(a, b) for tt, a, b in tsigs if tt <= t + 1e-6][-1]
+        bar_len = 120.0 * tempo / 1e6 * 4.0 / den * num
+        nxt = t + bar_len
+        changes = [tt for tt, *_ in tempos + tsigs if t + 1e-6 < tt < nxt - 1e-6]
+        t = min(changes) if changes else nxt   # a change mid-bar starts a new bar
+    return bars
+
+
+def write_smf(events, path, end_tick=None):
+    events = sorted(events, key=lambda e: (e[0], e[1]))
     trk = bytearray()
-    # 120 Hz ticks: tempo 500000 us/qn with 60 ticks per quarter note
-    trk += b'\x00\xFF\x51\x03' + (500000).to_bytes(3, 'big')
+    trk += b'\x00\xFF\x51\x03' + (500000).to_bytes(3, 'big')   # 60 ticks per quarter at 120 Hz
     last = 0
     for at, _, data in events:
         trk += _varlen(at - last) + data
         last = at
-    trk += b'\x00\xFF\x2F\x00'
-    return b'MThd' + struct.pack('>IHHH', 6, 0, 1, 60) + b'MTrk' + struct.pack('>I', len(trk)) + trk
+    trk += _varlen(max(0, (end_tick or last) - last)) + b'\xFF\x2F\x00'
+    with open(path, 'wb') as fh:
+        fh.write(b'MThd' + struct.pack('>IHHH', 6, 0, 1, 60) + b'MTrk' + struct.pack('>I', len(trk)) + trk)
+
+
+def evnt_to_smf(evnt):
+    events, marks = parse_evnt(evnt)
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix='.mid', delete=False) as tf:
+        write_smf(events, tf.name, marks['end'])
+        data = open(tf.name, 'rb').read()
+    os.remove(tf.name)
+    return data
 
 
 # ---------------------------------------------------------------- rendering
@@ -176,23 +237,40 @@ def find_soundfont(explicit=None):
     return None
 
 
-def render(mid_path, out_path, soundfont):
+def render(mid_path, out_path, soundfont, trim_s=None):
+    """MIDI -> Ogg Vorbis via FluidSynth. `trim_s` cuts the audio at an exact time (loop end)."""
     fs = shutil.which('fluidsynth')
-    if not fs or not soundfont:
+    ff = shutil.which('ffmpeg')
+    if not fs or not soundfont or not ff:
         return False
-    wav = out_path[:-4] + '.wav'
+    wav = out_path[:-4] + '.tmp.wav'
     r = subprocess.run([fs, '-ni', '-g', '0.8', '-r', '44100', '-F', wav, soundfont, mid_path], capture_output=True)
     if r.returncode != 0 or not os.path.exists(wav):
         return False
-    ff = shutil.which('ffmpeg')
-    if ff:
-        subprocess.run([ff, '-y', '-loglevel', 'error', '-i', wav, '-af', 'silenceremove=stop_periods=1:stop_duration=1.5:stop_threshold=-60dB',
-                        '-c:a', 'libmp3lame', '-b:a', '192k', out_path], capture_output=True)
-        if os.path.exists(out_path):
-            os.remove(wav)
-            return True
-    os.replace(wav, out_path[:-4] + '.wav')
-    return True
+    af = ['-af', 'atrim=end=%.4f' % trim_s] if trim_s else ['-af', 'silenceremove=stop_periods=1:stop_duration=1.5:stop_threshold=-60dB']
+    subprocess.run([ff, '-y', '-loglevel', 'error', '-i', wav] + af + ['-c:a', 'vorbis', '-strict', '-2', '-q:a', '7', out_path],
+                   capture_output=True)
+    os.remove(wav)
+    return os.path.exists(out_path)
+
+
+def parse_dat(dat):
+    """Transition tables (record 0 of COMBAT.DAT / GAMEFLOW.DAT): u8 N; N x (phraseLen, phraseLast);
+    N x N matrix (0xFF = none); u8 E; E x (u8 L, L + 1 link values: 0 = cut, n = link track n-1,
+    bit 7 = the current track keeps playing under the link)."""
+    rec = [b for _, b in pak.read_pak(dat)][0]
+    p = 0
+    n = rec[p]; p += 1
+    plen = [rec[p + 2 * i] for i in range(n)]
+    plast = [rec[p + 2 * i + 1] for i in range(n)]
+    p += 2 * n
+    matrix = list(rec[p:p + n * n]); p += n * n
+    e = rec[p]; p += 1
+    links = []
+    for _ in range(e):
+        L = rec[p] + 1; p += 1
+        links.append(list(rec[p:p + L])); p += L
+    return {'track_count': n, 'phrase_len': plen, 'phrase_last': plast, 'matrix': matrix, 'links': links}
 
 
 # ---------------------------------------------------------------- conversion
@@ -225,58 +303,85 @@ def convert(extracted, out_root, soundfont=None, log=print):
                 name = f'{i}_{SFX_NAMES.get(i, "sfx")}.wav'
                 write_wav(os.path.join(out, 'sfx', name), r[0], r[1])
                 index['sfx'][SFX_NAMES.get(i, str(i))] = name
-    # music (General MIDI versions)
+    # music (General MIDI versions): each song loops itself with XMIDI FOR/NEXT markers; it is
+    # unrolled once (intro + body + body) so the Ogg loops seamlessly from the second body.
     sf = find_soundfont(soundfont)
-    sets = {'combat': os.path.join(extracted, 'LILTRE', 'DATA', 'SOUND', 'COMBAT.MID'),
-            'gameflow': os.path.join(extracted, 'LILTRE', 'DATA', 'SOUND', 'GAMEFLOW.MID'),
-            'midgames': os.path.join(extracted, 'BIGTRE', 'DATA', 'MIDGAMES', 'MMUSIC.PAK')}
+    snd = os.path.join(extracted, 'LILTRE', 'DATA', 'SOUND')
+    sets = {'combat': (os.path.join(snd, 'COMBAT.MID'), os.path.join(snd, 'COMBAT.DAT')),
+            'gameflow': (os.path.join(snd, 'GAMEFLOW.MID'), os.path.join(snd, 'GAMEFLOW.DAT')),
+            'midgames': (os.path.join(extracted, 'BIGTRE', 'DATA', 'MIDGAMES', 'MMUSIC.PAK'), None)}
     rendered = 0
-    for set_name, f in sets.items():
+    index['music'] = {}
+    index['music_sets'] = {}
+    for set_name, (f, dat) in sets.items():
         if not os.path.exists(f):
             continue
-        songs = _collect_xmidi(open(f, 'rb').read(), set_name)
-        index['music'][set_name] = []
+        songs, link_songs = _collect_xmidi(open(f, 'rb').read(), set_name)
+        entries = []
         for i, form in enumerate(songs):
-            evs = xmidi_events(form)
-            if not evs:
-                index['music'][set_name].append(None)
-                continue
-            mid = os.path.join(out, 'music', f'{set_name}_{i}.mid')
-            with open(mid, 'wb') as fh:
-                fh.write(evnt_to_smf(evs[0]))
-            mp3 = mid[:-4] + '.mp3'
-            if os.path.exists(mp3) or render(mid, mp3, sf):
-                rendered += 1
-                index['music'][set_name].append(os.path.basename(mp3))
-            else:
-                index['music'][set_name].append(None)
+            entry = _render_song(form, os.path.join(out, 'music', f'{set_name}_{i}'), sf, loop=True)
+            rendered += 1 if entry else 0
+            entries.append(entry)
+        links = [_render_song(form, os.path.join(out, 'music', f'{set_name}_link_{k}'), sf, loop=False)
+                 for k, form in enumerate(link_songs)]
+        index['music'][set_name] = entries
+        info = {'link_tracks': links}
+        if dat and os.path.exists(dat):
+            info.update(parse_dat(open(dat, 'rb').read()))
+        index['music_sets'][set_name] = info
     with open(os.path.join(out, 'audio.json'), 'w') as fh:
         json.dump(index, fh, indent=1)
     log(f"  {len(index['speech'])} speech clips, {len(index['sfx'])} sound effects, "
-        f"{sum(len(v) for v in index['music'].values())} songs ({rendered} rendered"
+        f"{sum(len(v) for v in index['music'].values())} songs + {sum(len(v['link_tracks']) for v in index['music_sets'].values())} links ({rendered} rendered"
         f"{'' if sf else '; no SoundFont found — set SC_SOUNDFONT or put soundfonts/default.sf2'})")
 
 
 def _collect_xmidi(blob, set_name):
-    """Songs in file order. COMBAT/GAMEFLOW: [set][0] = link-track archive, [1..] main tracks."""
-    songs = []
-
-    def walk(b, depth):
+    """(songs, link songs). COMBAT/GAMEFLOW: one set = PAK whose entry 0 is an archive of link
+    (transition) tracks and entries 1.. are the songs. MMUSIC.PAK: a flat list of songs."""
+    def forms(b, depth=0):
         if b.startswith(b'FORM') or b.startswith(b'CAT '):
-            songs.append(b)
-            return
+            return [b]
         if depth > 4 or len(b) < 8:
-            return
+            return []
         try:
-            entries = pak.read_pak(b)
+            return [x for _, e in pak.read_pak(b) for x in forms(e, depth + 1)]
         except Exception:
-            return
-        for k, (_, e) in enumerate(entries):
-            if set_name != 'midgames' and depth == 1 and k == 0 and not e.startswith(b'FORM'):
-                continue   # transition (link) tracks: skipped for now
-            walk(e, depth + 1)
-    walk(blob, 0)
-    return songs
+            return []
+    if set_name == 'midgames':
+        return forms(blob), []
+    songs, links = [], []
+    for _, set_blob in pak.read_pak(blob):
+        entries = pak.read_pak(set_blob)
+        if entries and not entries[0][1].startswith(b'FORM'):
+            links += forms(entries[0][1])
+            entries = entries[1:]
+        for _, e in entries:
+            songs += forms(e)
+    return songs, links
+
+
+def _render_song(form, base, sf, loop):
+    evs = xmidi_events(form)
+    if not evs:
+        return None
+    events, marks = parse_evnt(evs[0])
+    loop_start = None
+    end_tick = max([e[0] for e in events] + [marks['end']])
+    if loop and marks['for'] is not None and marks['next'] is not None and marks['next'] > marks['for']:
+        events, end_tick, loop_start = unroll(events, marks)
+        bars = bar_ticks(marks, end_tick, marks['for'], marks['next'])
+    else:
+        bars = bar_ticks(marks, end_tick)
+    write_smf(events, base + '.mid', end_tick)
+    ogg = base + '.ogg'
+    trim = end_tick / 120.0 if loop_start is not None else None
+    if not (os.path.exists(ogg) or render(base + '.mid', ogg, sf, trim)):
+        return None
+    return {'file': os.path.basename(ogg), 'end_s': round(end_tick / 120.0, 4),
+            'loop_start_s': round(loop_start / 120.0, 4) if loop_start is not None else None,
+            'body_s': round((marks['next'] - marks['for']) / 120.0, 4) if loop_start is not None else None,
+            'bars_s': [round(b / 120.0, 4) for b in bars]}
 
 
 if __name__ == '__main__':

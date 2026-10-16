@@ -16,6 +16,7 @@ var weapons := WeaponSystem.new()
 var ai: AIPilot
 var last_attacker: Aircraft
 var incoming: Array = []           # missiles fired at us (for RWR / AI defence)
+var visual_scale := 1.0           # >1 when far from the camera, so aircraft don't shrink to dots
 var velocity_world: Vector3:
 	get: return fm.velocity
 var _damage_smoke: GPUParticles3D
@@ -147,7 +148,7 @@ func simulate(dt: float, terrain: Terrain) -> void:
 
 
 func _sync() -> void:
-	transform = Transform3D(fm.basis, fm.position)
+	transform = Transform3D(fm.basis * Basis.from_scale(Vector3.ONE * visual_scale), fm.position)
 	var ab := fm.afterburner > 0.0 and fm.has_afterburner
 	for n in _afterburner_nodes:
 		n.visible = ab

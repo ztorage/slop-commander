@@ -36,7 +36,7 @@ the `godot/` project. Without it, the game shows instructions and does not start
 
 | Key | Action | Key | Action |
 |---|---|---|---|
-| Arrows | stick (pitch/roll) | `,` `.` (or Z X) | rudder |
+| Arrows | stick (pitch/roll) | `,` `.` | rudder |
 | `1`–`5` | military power 20–100% | `6`–`0` | afterburner 20–100% |
 | `+` `-` | throttle up/down (into afterburner) | L | landing gear |
 | B | wheel brakes / air brake | Ctrl+E | eject |
@@ -45,6 +45,8 @@ the `godot/` project. Without it, the game shows instructions and does not start
 | `;` | chaff | `'` | flare |
 | F1 | cockpit | F2 | chase camera |
 | F3 / F4 / F5 | look left / right / back | F6 | external (orbit, mouse-drag) |
+| Z (or F1 again) | cockpit zoomed onto the HUD | Y | padlock: track the target |
+| Right-drag | free look in the cockpit | F9 / F10 | victim / weapon camera (again: back) |
 | `[` `]` | cycle views | D | right MFD: weapons / damage |
 | Ctrl+I | cockpit art on/off | Ctrl+R / Shift+R | restart / restart airborne |
 | N | navigation map | Shift+Tab / Tab (hold) | time compression 1×/2×/4× / 6× |

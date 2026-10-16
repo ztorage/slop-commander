@@ -4,7 +4,6 @@ extends Node
 ## cannon, gear and touchdown cues, positional engine noise on other aircraft, and the music
 ## state machine of the original (mission tune, combat track, crash, victory).
 
-const COMBAT_RANGE := 15000.0
 
 var player: Aircraft
 var world: CombatWorld
@@ -93,21 +92,124 @@ func _update_ai_engines() -> void:
 			_ai_engines.erase(a)
 
 
+# ---------------------------------------------------------------- music director
+## Track numbers of the combat set and the rules for choosing them, as in the original:
+const T_MISSILE := 9          # a missile is guiding on the player
+const T_ON_TAIL := 5          # player sitting on an enemy's tail
+const T_DAMAGE_HEAVY := 7     # >= 75% damage
+const T_DAMAGE_MEDIUM := 6    # >= 35% damage
+const T_AIR_COMBAT := 4
+const T_GROUND_THREAT := 19
+const T_ALL_CLEAR := 13       # enemies gone after a fight
+const T_VICTORY := 12
+const T_FRIEND_LOST := 15
+const T_KILL_AIR := 16
+const T_KILL_VEHICLE := 17
+const T_KILL_OTHER := 18
+const T_CRASH := 11
+const T_DEAD := 20
+const THREAT_RANGE := 18520.0 * 0.3048
+const TAIL_RANGE := 3500.0 * 0.3048
+const STINGERS := [14, 15, 16, 17, 18]
+
+var _director_timer := 0.0
+var _fought := false               # "combat happened" flag (cleared by the all-clear track)
+var _started := false
+var _end_music := false
+
+
+func _connect_events() -> void:
+	if world.aircraft_destroyed.is_connected(_on_aircraft_destroyed):
+		return
+	world.aircraft_destroyed.connect(_on_aircraft_destroyed)
+	world.ground_destroyed.connect(_on_ground_destroyed)
+
+
 func _update_music() -> void:
+	var eng := Audio.engine
+	if not _started:
+		_started = true
+		_connect_events()
+		Audio.music("combat", cruise_track)
+		return
+	if _end_music:
+		return
 	if mission and mission.over:
-		Audio.music("combat", Audio.VICTORY_TRACK if mission.won else Audio.CRASH_TRACK)
-	elif not player.alive or player.ejected:
-		Audio.music("combat", Audio.CRASH_TRACK)
-	elif _in_combat():
-		Audio.music("combat", Audio.COMBAT_TRACK)
-	else:
-		Audio.music("combat", cruise_track, 4.0)
+		_end_music = true
+		Audio.music("combat", T_VICTORY if mission.won else T_DEAD)
+		return
+	if not player.alive or player.ejected:
+		_end_music = true
+		Audio.music("combat", T_CRASH if player.fm.crashed and not player.ejected else T_DEAD)
+		return
+	_director_timer -= get_process_delta_time()
+	if _director_timer > 0.0:
+		return
+	_director_timer = 0.25
+	if eng.current != eng.requested:
+		return                                    # a transition is pending
+	if eng.current in STINGERS and not eng.finished():
+		return                                    # let a punctuation play out
+	var threat := _threats()
+	if threat != 0:
+		_fought = true
+		var damage := 100.0 * (1.0 - player.hp / maxf(player.max_hp, 1.0))
+		var t := T_AIR_COMBAT if threat & 1 else T_GROUND_THREAT
+		if world.missiles_tracking(player).size() > 0:
+			t = T_MISSILE
+		elif _on_enemy_tail():
+			t = T_ON_TAIL
+		elif damage >= 75.0:
+			t = T_DAMAGE_HEAVY
+		elif damage >= 35.0:
+			t = T_DAMAGE_MEDIUM
+		Audio.music("combat", t)
+	elif _fought:
+		_fought = false
+		Audio.music("combat", T_ALL_CLEAR)        # enemies gone after a fight
+	elif eng.current in STINGERS:
+		Audio.music("combat", cruise_track)       # resume after a punctuation
 
 
-func _in_combat() -> bool:
-	if world.missiles_tracking(player).size() > 0:
-		return true
+## Bit 1: an enemy aircraft within ~3 nm; bit 2: an armed enemy ground site within ~3 nm.
+func _threats() -> int:
+	var bits := 0
+	var p := player.global_position
 	for a in world.aircraft:
-		if a.alive and a.team != player.team and a.global_position.distance_to(player.global_position) < COMBAT_RANGE:
+		if a.alive and a.team != player.team and a.global_position.distance_to(p) < THREAT_RANGE:
+			bits |= 1
+	for u in world.ground_units:
+		if u.alive and u.team >= 0 and u.team != player.team and not u.weapon.is_empty() \
+				and u.global_position.distance_to(p) < THREAT_RANGE:
+			bits |= 2
+	return bits
+
+
+## An enemy aircraft close ahead of the player's nose, with the player behind it.
+func _on_enemy_tail() -> bool:
+	var p := player.global_position
+	var fwd := -player.global_basis.z
+	for a in world.aircraft:
+		if not a.alive or a.team == player.team:
+			continue
+		var rel := a.global_position - p
+		if rel.length() > TAIL_RANGE or fwd.angle_to(rel) > deg_to_rad(45.0):
+			continue
+		if rel.dot(-a.global_basis.z) > 0.0:      # the enemy points away from us
 			return true
 	return false
+
+
+func _on_aircraft_destroyed(a: Aircraft) -> void:
+	if a == player:
+		return
+	if a.team == player.team:
+		Audio.music("combat", T_FRIEND_LOST)
+	elif a.last_attacker == player:
+		Audio.music("combat", T_KILL_AIR)
+
+
+func _on_ground_destroyed(u: GroundUnit) -> void:
+	if u.team < 0 or u.team == player.team or u.last_attacker != player:
+		return
+	Audio.music("combat", T_KILL_VEHICLE if String(u.data.get("kind", "")) == "grnd" else T_KILL_OTHER)

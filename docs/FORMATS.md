@@ -168,8 +168,17 @@ Coordinates are signed 24-bit feet stored in 4-byte slots.
 - Music: `SOUND/COMBAT.*`, `GAMEFLOW.*` (`.MID` General MIDI, `.ROL` MT-32, `.ADL` AdLib) and
   `MIDGAMES/{A,R,M}MUSIC.PAK`: PAKs whose first entry is an archive of transition tracks followed by
   XMIDI songs (`FORM XDIR` / `CAT XMID` / `EVNT`, 120 Hz ticks, note-ons carry durations).
-  `COMBAT.DAT` holds the transition matrix (not used yet). In flight: mission `TUNE` (0–3), 4 combat,
-  11 crash / ejection, 12 mission over.
+  Songs loop with XMIDI controllers 116 (FOR, value 0 = forever) / 117 (NEXT); stingers have no loop.
+  `COMBAT.DAT` (PAK, record 0): `u8 N; N × (phraseLen bars, phraseLast); N×N matrix (0xFF = none);
+  u8 E; E × (u8 L, L+1 values)`. A requested change waits for the next bar; position in the phrase =
+  `bar % phraseLen` (+1, or phraseLast when 0) indexes `links[matrix[cur][req]]`: 0 = cut, n = play
+  link track n−1 (bit 7: over the still-running song), then start the requested song.
+  Combat set tracks chosen by the flight code (from STRIKE.EXE): mission `TUNE` (0–3) cruising;
+  with an enemy aircraft or armed ground site within 18 520 ft: 9 missile guiding on you, 5 on an
+  enemy's tail (≤ 3 500 ft, within 45° of the nose, behind it), 7 / 6 at ≥ 75 % / ≥ 35 % damage,
+  else 4 (air) or 19 (ground only); 13 when the area is clear after a fight, 12 mission complete;
+  stingers 16 / 17 / 18 for the player's aircraft / vehicle / other kills, 14 / 15 friendly losses,
+  11 crash, 20 death, 8 / 21 autopilot.
 - `VOCLIST.IFF`: `LIST` of 20-byte VOC file names (`f:3mi061.voc`) for the cutscene speech in
   `VOCLIST.TRE`.
 

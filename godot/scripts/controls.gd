@@ -3,7 +3,7 @@ extends Node
 ## card (handled by key code in flight_scene.gd); actions here cover the analogue controls, fire,
 ## and gamepad buttons.
 ##
-##   Arrows: stick   , . (or Z X): rudder   + -: throttle   1-5: military power   6-0: afterburner
+##   Arrows: stick   , . : rudder   Z: cockpit zoom onto the HUD   + -: throttle   1-5: military power   6-0: afterburner
 ##   Space: fire   W: next weapon   G: guns   T / Shift-T / Ctrl-T: target farther / closer / none
 ##   ; chaff   ' flare   L gear   B brakes (wheel / air)   Ctrl-E eject   D damage MFD
 ##   F1 cockpit  F2 chase  F3/F4/F5 left/right/back  F6 external   [ ] cycle views
@@ -12,7 +12,7 @@ extends Node
 const KEYS := {
 	"pitch_up": [KEY_DOWN], "pitch_down": [KEY_UP],
 	"roll_left": [KEY_LEFT], "roll_right": [KEY_RIGHT],
-	"yaw_left": [KEY_COMMA, KEY_Z], "yaw_right": [KEY_PERIOD, KEY_X],
+	"yaw_left": [KEY_COMMA], "yaw_right": [KEY_PERIOD],
 	"throttle_up": [KEY_EQUAL, KEY_KP_ADD], "throttle_down": [KEY_MINUS, KEY_KP_SUBTRACT],
 	"fire": [KEY_SPACE],
 }

@@ -75,8 +75,10 @@ func _draw() -> void:
 	if rig and not rig.is_cockpit():
 		_draw_external(fm, vp)
 		return
-	if rig and rig.view != CameraRig.View.COCKPIT_FRONT:
-		_draw_status(fm, vp, vp.y - 30)  # side/rear views: no HUD glass in sight
+	if rig and (rig.view != CameraRig.View.COCKPIT_FRONT or not rig.art_visible()):
+		_draw_status(fm, vp, vp.y - 30)  # side/rear views, padlock, free look: no HUD glass in sight
+		if rig.padlock or not rig.art_visible():
+			_draw_combat(fm, Rect2(Vector2.ZERO, vp), vp * 0.5, 0.0, vp.y - 66)
 		return
 	# HUD frame: the art's HUD glass, or a centred region when the cockpit art is hidden
 	var c := vp * 0.5
@@ -196,11 +198,16 @@ func _draw_combat(fm: FlightModel, frame: Rect2, c: Vector2, px_per_rad: float, 
 	if t == null or not is_instance_valid(t) or t.get("alive") != true:
 		return
 	var dist := aircraft.global_position.distance_to(t.global_position)
-	if camera.is_position_behind(t.global_position):
-		_txt(Vector2(c.x - 100, weapon_y + 20), "TGT %.1f NM BEHIND" % (dist / 1852.0), 14, COL, HORIZONTAL_ALIGNMENT_CENTER, 200)
+	var r := 14.0
+	var on_frame := _target_screen(t.global_position, frame, c)
+	if on_frame.x < 0.0:   # off the frame: the box sits on the edge, pointing where to turn
+		var edge := _edge_point(t.global_position, frame.grow(-r - 4), c)
+		var dir := (edge - c).normalized()
+		draw_rect(Rect2(edge - Vector2(r, r), Vector2(r, r) * 2), COL, false, 2)
+		draw_colored_polygon(PackedVector2Array([edge + dir * (r + 10), edge + dir * r + dir.orthogonal() * 6, edge + dir * r - dir.orthogonal() * 6]), COL)
+		_txt(edge + Vector2(-40, r + 16), "%.1f" % (dist / 1852.0), 13, COL, HORIZONTAL_ALIGNMENT_CENTER, 80)
 		return
 	var sp := camera.unproject_position(t.global_position)
-	var r := 14.0
 	if t is GroundUnit:   # ground target: diamond
 		draw_polyline(PackedVector2Array([sp + Vector2(0, -r), sp + Vector2(r, 0), sp + Vector2(0, r), sp + Vector2(-r, 0), sp + Vector2(0, -r)]), COL, 2)
 	else:
@@ -220,6 +227,30 @@ func _draw_combat(fm: FlightModel, frame: Rect2, c: Vector2, px_per_rad: float, 
 		_txt(sp + Vector2(-40, -r * 2.2), "LOCK", 15, WARN, HORIZONTAL_ALIGNMENT_CENTER, 80)
 	elif w.lock_progress > 0.0:
 		draw_arc(sp, r * (4.0 - 2.2 * w.lock_progress / WeaponSystem.LOCK_TIME), 0, TAU, 32, COL, 1)
+
+
+## Returns Vector3(-1, …) when the point is behind the camera or outside `frame`, else (x, y, 0).
+func _target_screen(p: Vector3, frame: Rect2, _c: Vector2) -> Vector3:
+	if camera.is_position_behind(p):
+		return Vector3(-1, 0, 0)
+	var s := camera.unproject_position(p)
+	return Vector3(s.x, s.y, 0) if frame.has_point(s) else Vector3(-1, 0, 0)
+
+
+## Where the ray from the frame centre toward the target's direction leaves `frame`.
+func _edge_point(p: Vector3, frame: Rect2, c: Vector2) -> Vector2:
+	var local := camera.global_transform.affine_inverse() * p        # camera space, -z ahead
+	var dir := Vector2(local.x, -local.y)
+	if dir.length() < 1e-4:
+		dir = Vector2(0, 1)
+	dir = dir.normalized()
+	var tx := INF
+	var ty := INF
+	if dir.x > 0.0: tx = (frame.end.x - c.x) / dir.x
+	elif dir.x < 0.0: tx = (frame.position.x - c.x) / dir.x
+	if dir.y > 0.0: ty = (frame.end.y - c.y) / dir.y
+	elif dir.y < 0.0: ty = (frame.position.y - c.y) / dir.y
+	return c + dir * minf(tx, ty)
 
 
 ## Continuously computed impact point: where a bomb released now would land, with a fall line
@@ -254,7 +285,7 @@ func _draw_external(fm: FlightModel, vp: Vector2) -> void:
 	_txt(Vector2(0, vp.y - 40), line + ("   " + " ".join(flags) if flags.size() else ""), 16, COL,
 		HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 	_draw_combat(fm, Rect2(Vector2.ZERO, vp), vp * 0.5, 0.0, vp.y - 66)
-	_txt(Vector2(16, 28), "F1-F6 / [ ]: views   Space fire  W weapon  G guns  T target  ; chaff  ' flare  1-5 power  6-0 AB  L gear  B brakes  Ctrl-E eject  Ctrl-R restart", 13, Color(1, 1, 1, 0.7))
+	_txt(Vector2(16, 28), "F1-F6 / [ ]: views  Z zoom  Y padlock  F9 victim  F10 weapon   Space fire  W weapon  G guns  T target  ; chaff  ' flare  1-5 power  6-0 AB  L gear  B brakes  Ctrl-E eject  Ctrl-R restart", 13, Color(1, 1, 1, 0.7))
 	if message != "":
 		_txt(Vector2(0, vp.y * 0.5 - 120), message, 26, WARN, HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 

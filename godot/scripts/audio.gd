@@ -14,9 +14,7 @@ const VICTORY_TRACK := 12
 
 var index := {}
 var _cache := {}
-var _music_a: AudioStreamPlayer
-var _music_b: AudioStreamPlayer
-var _music_key := ""
+var engine: MusicEngine          # adaptive music (sets, loops, bar-synced link phrases)
 var _radio: AudioStreamPlayer
 var _radio_queue: Array = []
 var _gun: AudioStreamWAV
@@ -40,8 +38,9 @@ func _ready() -> void:
 	dist.drive = 0.15
 	dist.post_gain = -2.0
 	AudioServer.add_bus_effect(radio_bus, dist)
-	_music_a = _player("Music")
-	_music_b = _player("Music")
+	engine = MusicEngine.new()
+	add_child(engine)
+	engine.setup(_load_music)
 	_radio = _player("Radio")
 	_radio.finished.connect(_next_radio)
 	if GameData.is_ready() and FileAccess.file_exists(GameData.path("audio/audio.json")):
@@ -81,36 +80,31 @@ func _load(rel: String) -> AudioStream:
 
 
 # ---------------------------------------------------------------- music
-## Crossfade to a song from a set ("combat", "gameflow", "midgames"); repeated calls are no-ops.
-func music(set_name: String, track: int, fade := 2.0) -> void:
-	var key := "%s_%d" % [set_name, track]
-	if key == _music_key:
+## Request a song of a music set ("combat", "gameflow", "midgames"). Within a set with a
+## transition table the change happens on the next bar, through the original link phrases.
+func music(set_name: String, track: int, _fade := 2.0) -> void:
+	var tracks: Array = index.get("music", {}).get(set_name, [])
+	if tracks.is_empty():
 		return
-	var files: Array = index.get("music", {}).get(set_name, [])
-	if track < 0 or track >= files.size() or files[track] == null:
-		return
-	var s := _load("music/" + String(files[track])) as AudioStreamMP3
-	if s == null:
-		return
-	s.loop = true
-	_music_key = key
-	var old := _music_a
-	_music_a = _music_b
-	_music_b = old
-	_music_a.stream = s
-	_music_a.volume_db = -40.0
-	_music_a.play()
-	var tw := create_tween().set_parallel(true)
-	tw.tween_property(_music_a, "volume_db", 0.0, fade)
-	tw.tween_property(_music_b, "volume_db", -40.0, fade)
-	tw.chain().tween_callback(_music_b.stop)
+	engine.use_set(set_name, tracks, index.get("music_sets", {}).get(set_name, {}))
+	engine.request(track)
 
 
 func stop_music(fade := 1.5) -> void:
-	_music_key = ""
-	var tw := create_tween()
-	tw.tween_property(_music_a, "volume_db", -40.0, fade)
-	tw.tween_callback(_music_a.stop)
+	engine.stop(fade)
+
+
+func _load_music(rel: String, looped: bool, loop_offset: float) -> AudioStream:
+	var key := rel + ("#loop" if looped else "")
+	if _cache.has(key):
+		return _cache[key]
+	var path := GameData.path("audio/" + rel)
+	var s: AudioStreamOggVorbis = AudioStreamOggVorbis.load_from_file(path) if FileAccess.file_exists(path) else null
+	if s:
+		s.loop = looped
+		s.loop_offset = loop_offset
+	_cache[key] = s
+	return s
 
 
 # ---------------------------------------------------------------- effects

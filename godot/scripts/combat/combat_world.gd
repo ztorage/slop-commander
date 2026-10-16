@@ -6,6 +6,7 @@ extends Node3D
 signal aircraft_destroyed(a: Aircraft)
 signal ground_destroyed(u: GroundUnit)
 signal aircraft_damaged(a: Aircraft, by: Node3D)
+signal weapon_released(weapon: Node3D, by: Node3D)
 
 const FT := 0.3048
 const BULLET_LIFE := 2.5
@@ -159,6 +160,7 @@ func fire_missile(from: Aircraft, weapon: Dictionary, target: Node3D) -> void:
 	var b := from.global_basis
 	m.launch(from.global_transform * Vector3(0, -1.2, -1.0), b, from.fm.velocity + (-b.z) * 15.0)
 	missiles.append(m)
+	weapon_released.emit(m, from)
 	var launch_sfx := "maverick_shoot" if String(weapon.name).begins_with("AGM") else ("aim120_shoot" if String(weapon.name) == "AMRAAM" else "aim9_shoot")
 	Audio.sfx(launch_sfx, from.global_position, self, 2.0)
 	if target is Aircraft:
@@ -184,6 +186,7 @@ func drop_bomb(from: Aircraft, weapon: Dictionary, target: Node3D) -> void:
 	b.global_transform = Transform3D(from.global_basis, from.global_transform * Vector3(0, -1.5, 0))
 	b.velocity = from.fm.velocity + from.global_basis * Vector3(0, -3.0, 0)
 	bombs.append(b)
+	weapon_released.emit(b, from)
 	Audio.sfx("mk20_drop" if String(weapon.name) == "MK20" else "mk82_drop", from.global_position, self)
 
 
@@ -275,6 +278,7 @@ func damage(target: Node3D, amount: float, by: Node3D) -> void:
 		var u := target as GroundUnit
 		if not u.alive:
 			return
+		u.last_attacker = by
 		u.hp -= amount
 		if u.hp <= 0.0:
 			u.on_destroyed(self)

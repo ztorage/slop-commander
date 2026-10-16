@@ -14,6 +14,7 @@ var max_hp := 20.0
 var alive := true
 var hit_radius := 8.0
 var velocity_world := Vector3.ZERO
+var last_attacker: Node3D
 var weapon := {}                  # {name, ammo, range_ft, min_range_ft}
 var weapon_data := {}             # gamedata/weapons/<weapon>.json
 var ammo := 0

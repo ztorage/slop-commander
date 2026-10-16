@@ -15,6 +15,7 @@ var aircraft: Aircraft
 var world: CombatWorld
 var side := Side.FRONT
 var art_enabled := true
+var hud_zoom := false            # front view zoomed onto the HUD (art view 4)
 var right_mfd := 0           # 0 weapons, 1 damage
 var layout := {}
 var _dir := ""
@@ -73,11 +74,12 @@ func rect_to_screen(r: Array) -> Rect2:
 
 ## Where the HUD boresight sits on screen in the front view (camera frustum is offset to match).
 func boresight_screen() -> Vector2:
-	return to_screen(Vector2(layout.boresight[0], layout.boresight[1]))
+	var b: Array = layout.get("boresight_zoom", layout.boresight) if hud_zoom else layout.boresight
+	return to_screen(Vector2(b[0], b[1]))
 
 
 func hud_glass_screen() -> Rect2:
-	return rect_to_screen(layout.hud_glass)
+	return rect_to_screen(layout.get("hud_glass_zoom", layout.hud_glass) if hud_zoom else layout.hud_glass)
 
 
 func _process(_d: float) -> void:
@@ -103,10 +105,10 @@ func _draw() -> void:
 		return
 	if not art_enabled or aircraft == null:
 		return
-	var view_index := int(side)
+	var view_index := 4 if hud_zoom and side == Side.FRONT and _views.size() > 4 else int(side)
 	if view_index < _views.size():
 		draw_texture_rect(_views[view_index], Rect2(art_origin(), SCREEN * art_scale()), false)
-	if side == Side.FRONT:
+	if side == Side.FRONT and not hud_zoom:
 		_draw_gauges()
 		_draw_mfds()
 		_draw_threats()

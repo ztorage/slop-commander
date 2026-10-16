@@ -17,7 +17,9 @@ from upscale import upscale_rgba
 # chunks; measured from the F-16 front view (320x200 coordinates, inclusive).
 KNOWN_LAYOUT = {
     'F16-CKPT': {'mfd_screens': {'L': [64, 147, 112, 185], 'R': [209, 147, 257, 185]},
-                 'hud_glass': [108, 6, 214, 100], 'boresight': [160, 55]},
+                 'hud_glass': [108, 6, 214, 100], 'boresight': [160, 55],
+                 # view 4: the same front view zoomed onto the HUD (posts ~1.47x further apart)
+                 'hud_glass_zoom': [95, 4, 227, 130], 'boresight_zoom': [160, 64], 'zoom_fov_scale': 0.68},
 }
 DEFAULT_LAYOUT = {'mfd_screens': {}, 'hud_glass': [100, 10, 220, 100], 'boresight': [160, 55]}
 

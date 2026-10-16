@@ -200,6 +200,24 @@ def build_overlays_glb(overlays, acc_imgs, pal, out_path, factor):
     return True
 
 
+def runway_list(overlays):
+    """Summarise each overlay mesh with a long thin footprint as a runway (feet, degrees true)."""
+    out = []
+    for verts, polys in overlays:
+        if not verts:
+            continue
+        v = np.array(verts)
+        lo, hi = v.min(0), v.max(0)
+        ext = hi - lo
+        length, width = max(ext[0], ext[1]), min(ext[0], ext[1])
+        if length < 1500 or width > length / 5:
+            continue
+        along_x = ext[0] > ext[1]
+        out.append({'center_ft': ((lo + hi) / 2).round(1).tolist(), 'length_ft': round(float(length)),
+                    'width_ft': round(float(width)), 'heading_deg': 90.0 if along_x else 0.0})
+    return out
+
+
 def write_grid(path, h, tone, kind, upper, lower):
     with open(path, 'wb') as f:
         f.write(b'SCTR' + struct.pack('<IHHf', 1, GRID, 0, SPACING_FT))
@@ -232,7 +250,10 @@ def convert(extracted, out_root, factor=4, log=print):
         objs = decode_objects(entries[5][1])
         with open(os.path.join(out, 'objects.json'), 'w') as f:
             json.dump(objs, f, indent=0)
-        has_overlays = build_overlays_glb(decode_overlays(entries[4][1]), acc, pal, os.path.join(out, 'overlays.glb'), factor)
+        overlays = decode_overlays(entries[4][1])
+        has_overlays = build_overlays_glb(overlays, acc, pal, os.path.join(out, 'overlays.glb'), factor)
+        with open(os.path.join(out, 'runways.json'), 'w') as f:
+            json.dump(runway_list(overlays), f, indent=1)
         theatres.append({'name': name, 'objects': len(objs), 'overlays': has_overlays,
                          'min_ft': int(h.min()), 'max_ft': int(h.max())})
         log(f'  terrain {name}: {int(h.min())}..{int(h.max())} ft, {len(objs)} objects')

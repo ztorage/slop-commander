@@ -2,6 +2,7 @@ extends Control
 ## Entry point: refuses to continue unless game data extracted from a real CD is present.
 
 const MENU := [
+	["Free flight  (F-16 from the runway, San Francisco)", "res://scenes/flight.tscn"],
 	["Theatre viewer  (fly over the maps)", "res://scenes/theatre_viewer.tscn"],
 	["Model viewer  (aircraft, vehicles, buildings)", "res://scenes/model_viewer.tscn"],
 ]

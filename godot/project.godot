@@ -9,6 +9,8 @@ run/main_scene="res://scenes/boot.tscn"
 [display]
 window/size/viewport_width=1280
 window/size/viewport_height=800
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [rendering]
 anti_aliasing/quality/msaa_3d=2
@@ -16,3 +18,8 @@ anti_aliasing/quality/msaa_3d=2
 [autoload]
 
 GameData="*res://scripts/game_data.gd"
+Controls="*res://scripts/controls.gd"
+
+[physics]
+
+common/physics_ticks_per_second=120

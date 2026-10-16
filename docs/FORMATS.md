@@ -62,6 +62,18 @@ Ground tiles: `TXM/TXMPACK.PAK`, 255 entries of `u16 w, h` + pixels (mostly 64×
 carry an artist guide line (palette 229/232) on the top/bottom rows and main diagonal, which the
 converter removes. Index 255 = show vertex colour.
 
+## Aircraft flight data ✅ (`OBJT/JETP`, `tools/aircraft.py`)
+Values checked against real aircraft (F-16, F-15, Su-27, MiG-21, A-10, 747, C-130):
+- `DYNM/DYNM`: empty mass, kg (24.8). `DYNM/THRS`: max thrust, N (24.8) + 3 × i8 (first = -1
+  when there is no afterburner). Some aircraft have a 6-byte THRS.
+- `DYNM/JDYN` (73 bytes): `+0` internal fuel kg; `+8/+12` afterburner stage factors; `+24` pitch
+  inertia; `+28` pitch gain; `+39` approach speed kt; `+50` drag coefficient; `+58` i8 aileron
+  (roll authority); `+59` rudder; `+60` i8 max G; `+61` i16 **top speed, m/s** (A-10 196 = 381 kt).
+- `CHLD`: 32-byte records `char model[8], i32 x, y, z` (object units) + 12 bytes; afterburner flame
+  (`*AB`), landing gear frames `GEAR0..4`, gun.
+- `WEAP/WPNS`: `u16 count, char weapon[8]` per station; `DCOY`: chaff, flares.
+The remake uses these as parameters of its own physics model (`godot/scripts/flight/flight_model.gd`).
+
 ## Not yet examined ⬜
 Missions (`MISN-*.IFF`), cockpits (`CKPT`),
 shapes/sprites (`*.SHP`), fonts, gameflow/conversations, FLIC cutscenes (`*.FLX`), XMIDI music,

@@ -26,6 +26,18 @@ The game looks for `gamedata/` in `$SC_GAMEDATA`, then the app's user-data folde
 (`~/Library/Application Support/Godot/app_userdata/Strike Commander Remake/gamedata`), then next to
 the `godot/` project. Without it, the game shows instructions and does not start.
 
+## Flight controls
+
+| Key | Action | Key | Action |
+|---|---|---|---|
+| Arrows | stick (pitch/roll) | `,` `.` (or Z X) | rudder |
+| `+` `-` / `1`–`0` | throttle | Backspace / Tab | afterburner |
+| G | landing gear | B | air brake |
+| W | wheel brakes | R / T | restart on runway / in the air |
+| F1 / F2 / F3 | cockpit / chase / orbit view | Esc | menu |
+
+Gamepads work too (left stick, triggers for throttle, shoulders for afterburner/air brake).
+
 ## Layout
 
 - `tools/` — disc reader, archive/format decoders, asset converters (Python)

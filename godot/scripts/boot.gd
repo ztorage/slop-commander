@@ -2,6 +2,8 @@ extends Control
 ## Entry point: refuses to continue unless game data extracted from a real CD is present.
 
 const MENU := [
+	["Campaign  (story - new game, work in progress)", "res://scenes/campaign.tscn", {"campaign": "new"}],
+	["Continue campaign", "res://scenes/campaign.tscn", {"campaign": "continue"}],
 	["Missions  (original campaign missions)", "res://scenes/mission_select.tscn"],
 	["Strike practice  (armour, AAA and SAM sites)", "res://scenes/flight.tscn", {"SC_SCENARIO": "strike"}],
 	["Dogfight  (F-16 vs 2 MiG-29s)", "res://scenes/flight.tscn", {"SC_SCENARIO": "dogfight", "SC_BANDITS": "2"}],

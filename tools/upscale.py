@@ -29,7 +29,27 @@ def _scale2x(a):
     return out
 
 
+def _bleed(a, steps=3):
+    """Give transparent pixels the colour of an opaque neighbour, so filtering never mixes in
+    whatever RGB the transparent texels happen to hold (palette 255 is often magenta)."""
+    a = a.copy()
+    solid = a[..., 3] > 0
+    if solid.all() or not solid.any():
+        return a
+    a[~solid, :3] = 0
+    for _ in range(steps):
+        grown = solid.copy()
+        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            src = np.roll(np.roll(a, dy, 0), dx, 1)
+            ok = np.roll(np.roll(solid, dy, 0), dx, 1) & ~grown
+            a[ok, :3] = src[ok, :3]
+            grown |= ok
+        solid = grown
+    return a
+
+
 def upscale_rgba(img, factor=4):
+    img = Image.fromarray(_bleed(np.asarray(img.convert('RGBA'))), 'RGBA')
     if factor <= 1:
         return img
     if REALESRGAN and factor == 4:

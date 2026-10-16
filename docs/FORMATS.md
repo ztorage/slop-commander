@@ -182,12 +182,45 @@ Coordinates are signed 24-bit feet stored in 4-byte slots.
 - `VOCLIST.IFF`: `LIST` of 20-byte VOC file names (`f:3mi061.voc`) for the cutscene speech in
   `VOCLIST.TRE`.
 
+## Campaign: story script, screens, conversations 🟡 (`tools/story.py`, runtime `godot/scripts/story/`)
+All in `BIGTRE/DATA/GAMEFLOW`.
+- `GAMEFLOW.IFF` `FORM GAME`: one `FORM MISS` per story stage: `INFO` id, `EFCT` script (u8 opcode,
+  u8 value pairs), `FORM SCEN`* (`INFO` = OPTIONS screen id) with `FORM SPRT`* (`INFO` = sprite id,
+  `EFCT` click script, `REQU` (op, flag) pairs: 0 flag clear, 1 flag set, 2 clear-or-next).
+  Opcodes: 0 conversation, 1 screen, 2 cutscene, 3/12 fly mission (index into `MLST`), 6/7 flag
+  on/off, 8 establishing shot, 9/10 if (not) flag, 13 next stage id, 15 go to it, 16/17 save/load,
+  18 travel map, 19 kill board, 20/21 if contract accepted/rejected, 22 end stage, 23 catalogue,
+  25 ledger, 29 check balance, 30 else, 31 endif, 32 if mission n won, 34 apply `STAT` change,
+  37 if last mission won, 38 music modifier. Unknown: 4, 11, 14, 24, 26, 27, 35, 36, 40.
+  `WRLD/MAPS`: travel maps (u8 count, then u16 x, u16 y, name). `STAT/CHNG`: `CASH`/`OVER` (u8 op
+  0 add/1 subtract/2 set, u32 thousands of dollars), `WEAP` (op, weapon, u16), `PILT` (op, pilot,
+  kind, u16). `MLST`: `DATA` 8-byte mission names, `PRTL` 9-byte (theatre name, id).
+- `OPTIONS.IFF` `FORM OPTS/SCEN`: `INFO` id, `COLR`, `TUNE` (gameflow music), `BACK` (`PALT`,
+  `SHAP`* OPTSHPS indices), `FORE` (`PALT`, `SPRT`*: `SHAP` = [sprite id, OPTSHPS index or 0xff,
+  ?], `LABL`, `RECT` x0 y0 x1 y1 or `QUAD`, `SEQU` animation frame list, `INFO`, `TUNE`, `CLCK`).
+  Sprite frame 0 is the still image, the others animate over it. `ESTB/SHOT`: establishing shots,
+  `PALS` patches then `SHPS` layers (`SHAP` static / `MOBL` animated: u16 shape, i16 x, i16 y).
+- Screen art is in absolute 320x200 coordinates. Palettes (`OPTPALS`/`CONVPALS`) are patches:
+  u16 first colour, u16 count, 6-bit RGB; a screen's palette is the base palette with its patches.
+- `CONV.PAK`: conversation scripts. Frames: `00` wide shot (set name[9]); `01` figure (name[9],
+  u16 x, y); `02` figure speaks (name[9], x, y, u8 colour, voice\0, text\0); `03` close-up
+  (name[9], u8 expression, set[9], u16 x, y = face hotspot, voice\0, text\0, u8 colour); `04`
+  continue (voice\0, text\0); `0A` caption (colour, voice\0, text\0); `0B` u16 yes/no question
+  ("no" skips that many bytes); `0C` u16 end of "yes" branch (skip); `0E` u16 (unknown); `0F` pick a
+  wingman. Text uses `$N` first name, `$S` surname, `$C` callsign, `$W` wingman. Conversation art
+  sits below a 24-pixel band.
+- `CONVDATA.IFF`: `BCKS/BACK` sets (layers of u8 source 0 CONV/1 OPT, u8 shape, u8 palette, i16 y),
+  `FACE`/`FIGR` (name -> CONVSHPS set), `PFIG`/`FCPL`/`FGPL` palettes. Face sets: 0 face, 1 hair,
+  2-11 mouth shapes, 12-33 eyes/brows/expressions (the close-up's expression byte is a frame), 21
+  blink, 34-36 clothing, 37 sunglasses, 38/39 helmet and visor.
+- Speech: `VOCLIST.TRE` `F_<voice code>.VOC`.
+
 ## Not yet examined ⬜
-Missions (`MISN-*.IFF`), fonts, gameflow/conversations, FLIC cutscenes (`*.FLX`), XMIDI music,
-VOC speech, flight model constants.
+Fonts, FLIC cutscenes (`*.FLX`), midgame cutscenes (`MIDGAMES`), flight model constants.
 
 ## Credits
 Terrain overlay/object record layouts and the `RANG` colour formula were confirmed against the
 public notes and source of [libRealSpace](https://github.com/remileonard/libRealSpace)
 (Fabien Sanglard, Rémi Leonard et al.). That repository has no licence file, so it is used here
-only as documentation; no code is copied from it.
+only as documentation; no code is copied from it. Its notes were also the starting point for the
+gameflow opcode meanings and conversation frame types listed above.

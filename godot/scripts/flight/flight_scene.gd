@@ -46,6 +46,8 @@ func _env(name: String, default: String) -> String:
 
 
 func _ready() -> void:
+	if _campaign() and OS.get_environment("SC_STORY_TEST") != "":
+		_story_test_flight.call_deferred()
 	theatre = _env("SC_THEATRE", theatre)
 	aircraft_name = _env("SC_AIRCRAFT", aircraft_name)
 	scenario = _env("SC_SCENARIO", scenario)
@@ -310,6 +312,27 @@ func _process(delta: float) -> void:
 
 func _on_mission_over(success: bool, reason: String) -> void:
 	hud.result = {"won": success, "reason": reason}
+	if _campaign():
+		Campaign.last_result = {"won": success, "reason": reason}
+		get_tree().create_timer(5.0).timeout.connect(_back_to_campaign)
+
+
+## Flown from the campaign: the result goes back to the story when the mission ends.
+func _campaign() -> bool:
+	return GameData.launch.get("campaign", "") != "" and Campaign.returning
+
+
+## SC_STORY_TEST: a campaign mission "flown" by the test ends as won after a few seconds.
+func _story_test_flight() -> void:
+	await get_tree().create_timer(4.0).timeout
+	print("STORY flew %s" % mission_name)
+	Campaign.last_result = {"won": true, "reason": "test"}
+	_back_to_campaign()
+
+
+func _back_to_campaign() -> void:
+	if is_inside_tree():
+		get_tree().change_scene_to_file("res://scenes/campaign.tscn")
 	_compress = 1.0
 
 
@@ -516,7 +539,12 @@ func _unhandled_input(ev: InputEvent) -> void:
 		elif k == KEY_BRACKETRIGHT:
 			cam.cycle(1)
 		elif k == KEY_ESCAPE:
-			get_tree().change_scene_to_file("res://scenes/boot.tscn")
+			if _campaign():
+				if Campaign.last_result.is_empty() or not (mission and mission.over):
+					Campaign.last_result = {"won": false, "reason": "Mission aborted."}
+				_back_to_campaign()
+			else:
+				get_tree().change_scene_to_file("res://scenes/boot.tscn")
 	if ev.is_action_pressed("next_weapon"):
 		w.next_weapon()
 	elif ev.is_action_pressed("target_next"):

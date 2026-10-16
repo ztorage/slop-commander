@@ -226,9 +226,10 @@ Decoded from the CD's player (`MENU.EXE`, "PLAYFLIC 1.0b"), disassembled for the
   raw = 16 bytes. Codec 0: transparent run-length overlay (u16 flags, w, h, i16 x0, y0, u16
   row offsets, rows of skip/count runs; flag bit 0: count>>1 with bit 0 = fill).
 - `FLIC.PAK`: entries 0-14 sound clips (Creative Voice), 15-17 the score for three sound cards
-  (17 = General MIDI, 16 channels), 18-20 a shorter looping score for slow machines. ~10 frames/s
-  locked to the 93.7 s score; clips start at frames 1, 128, 151, 165, 215, 230, 265, 305, 360,
-  385, 415, 550, 680, 705, 760, 830 (one channel, each cuts the previous).
+  (17 = General MIDI, 16 channels), 18-20 a shorter looping score for slow machines. Played at
+  11.6 frames/s (tuned by eye against the 93.7 s score), the last frame held until the score
+  ends; clips start at frames 1, 128, 151, 165, 215, 230, 265, 305, 360, 385, 415, 550, 680, 705,
+  760, 830 (one channel, each cuts the previous).
 
 ## Not yet examined ⬜
 Fonts, midgame cutscenes (`MIDGAMES`), flight model constants.

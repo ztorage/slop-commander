@@ -286,6 +286,17 @@ entries). The intro is two overlay functions: image offset 0x671A0 (shots 1-8) w
   (119, 96). Name field (110, 56)-(233, 66), text at (113, 58); list (110, 71)-(233, 121), five
   10-pixel rows; OPTFONT. Names are DOS file names: A-Z, 0-9, at most 8, saved as NAME.SAV;
   Enter saves (asking before overwriting) or loads; the last save is `gensave` (continue game).
+- Training missions (OPTTEST.EXE overlay 0xCA at image 0x5EDA0): OBJVIEW.PAK 6 painting with
+  the 1 "TRAINING MISSION" banner at (4, 3), palette OBJVIEW 7; a wizard of `TM.SHP` button bars
+  at (6, 153) (aircraft page: (6, 116), 309 x 80). Pages and button codes (pressed frame = up + 1;
+  -1 back up, -2 cancel): type (frame 0: search and destroy 2, dogfight 1, GAUNTMEN.SHP gauntlet
+  3, cancel), count (7: 1-5), aircraft (22: 16 types, table at DS 0x116D: name, object,
+  loadout, ...), more/enough (59), altitude (68: 5,000-35,000 ft = 10,000 n - 5,000), skill (81:
+  rookie/veteran/ace), accept (92). Up to three enemy groups. Each choice adds BWFONT briefing
+  text: titles at (5, 43) and (5, 55), group n count at (20, 67 + 12 n) and type at (30, ...)
+  followed by "," / ", and" / "."; "Altitude: N feet." at (5, 103); "Intelligence reports
+  indicate S pilots." at (5, 115). Search and destroy shows four fixed lines and goes to accept.
+  The mission is built from `instant.iff`.
 - `MOUSE.SHP`: crosshair (11 x 11, hotspot 5, 5) and arrow, each with a highlighted copy.
 
 ## Not yet examined ⬜

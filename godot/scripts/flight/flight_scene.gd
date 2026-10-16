@@ -11,6 +11,9 @@ var theatre := "SANFRAN"
 var aircraft_name := "F-16DES"
 var scenario := "free"
 var bandits := 2
+var _training_skill := 0.75
+var _wave := 0
+var _gauntlet_wait := false
 var terrain: Terrain
 var world: CombatWorld
 var player: Aircraft
@@ -181,24 +184,60 @@ func start() -> void:
 	if scenario == "strike":
 		_setup_strike()
 		return
-	if scenario == "dogfight":
-		var p := Vector3(0, 3000.0, 20000.0)
+	if scenario == "dogfight" or scenario == "gauntlet":
+		# training missions (the front end's wizard) give enemy groups, altitude and skill
+		var alt_m := float(GameData.launch.get("altitude_ft", 10000)) * 0.3048
+		var p := Vector3(0, alt_m, 20000.0)
 		bandits = maxi(bandits, 0)
 		player.place(p, 0.0, 230.0, false)
 		_power = 0.85
-		for i in bandits:
-			var b := Aircraft.create("MIG29")
-			b.team = 1
-			b.ai = AIPilot.new(b, 0.75)
-			world.add_aircraft(b)
-			b.place(p + Vector3(-1500.0 + 3000.0 * i, 300.0 * i, -16000.0), 180.0, 220.0, false)
+		_training_skill = [0.55, 0.75, 0.95][clampi(int(GameData.launch.get("skill", 1)), 0, 2)]
+		var groups: Array = GameData.launch.get("groups", [["MIG29", bandits]])
+		if scenario == "gauntlet":
+			_wave = 1
+			groups = [["MIG21", 1]]
+		_spawn_groups(groups, p)
 		if _test == "combat":
 			player.ai = AIPilot.new(player, 0.9)
+		var n := 0
+		for g in groups:
+			n += int(g[1])
+		bandits = n
 		if bandits > 0:
 			hud.message = "%d BANDIT%s AHEAD — T: target  SPACE: fire  W: weapon  G: guns" % [bandits, "S" if bandits > 1 else ""]
 			get_tree().create_timer(5.0).timeout.connect(func(): if hud.message.begins_with(str(bandits)): hud.message = "")
 	else:
 		reset_on_runway(_runway_index)
+
+
+## Enemy groups [[aircraft, count], ...] ahead of `p`, a group per altitude step.
+func _spawn_groups(groups: Array, p: Vector3) -> void:
+	var k := 0
+	for gi in groups.size():
+		for i in int(groups[gi][1]):
+			var b := Aircraft.create(String(groups[gi][0]))
+			b.team = 1
+			b.ai = AIPilot.new(b, _training_skill)
+			world.add_aircraft(b)
+			b.place(p + Vector3(-1500.0 + 3000.0 * (k % 3), 300.0 * gi, -16000.0 - 1500.0 * (k / 3)), 180.0, 220.0, false)
+			k += 1
+
+
+## The gauntlet: when a wave is down, the next comes in, bigger and better flown.
+func _gauntlet_step() -> void:
+	if world.aircraft.any(func(x): return x.team == 1 and x.alive) or not player.alive or _gauntlet_wait:
+		return
+	_gauntlet_wait = true
+	hud.message = "WAVE %d CLEARED" % _wave
+	await get_tree().create_timer(5.0).timeout
+	_gauntlet_wait = false
+	_wave += 1
+	_training_skill = minf(0.5 + 0.08 * _wave, 0.98)
+	var types := ["MIG21", "MIG29", "SU27"]
+	var fwd := -player.global_transform.basis.z
+	_spawn_groups([[types[mini((_wave - 1) / 2, 2)], mini(1 + _wave / 2, 5)]], player.global_position + Vector3(fwd.x, 0, fwd.z).normalized() * 4000.0)
+	hud.message = "WAVE %d" % _wave
+	get_tree().create_timer(3.0).timeout.connect(func(): if hud.message.begins_with("WAVE"): hud.message = "")
 
 
 ## Strike practice: an armoured position with AAA and SAM cover 10 km ahead.
@@ -303,6 +342,8 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	cam.update_view(delta)
+	if scenario == "gauntlet":
+		_gauntlet_step()
 	# the original drew distant aircraft larger than life so they stay visible; same here
 	for a in world.aircraft:
 		if a != player:

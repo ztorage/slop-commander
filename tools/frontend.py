@@ -27,13 +27,16 @@ class Art:
     def __init__(self, extracted, out, factor):
         D = os.path.join(extracted, 'BIGTRE', 'DATA')
         rd = lambda *p: shape.pak_entries(open(os.path.join(D, *p), 'rb').read())
-        self.paks = {'OPTSHPS': rd('GAMEFLOW', 'OPTSHPS.PAK'), 'OPTPALS': rd('GAMEFLOW', 'OPTPALS.PAK'),
+        self.paks = {'OBJVIEW': rd('GAMEFLOW', 'OBJVIEW.PAK'), 'OPTSHPS': rd('GAMEFLOW', 'OPTSHPS.PAK'), 'OPTPALS': rd('GAMEFLOW', 'OPTPALS.PAK'),
                      'MAINMENU': rd('GAMEFLOW', 'MAINMENU.PAK'), 'TOMENU': rd('GAMEFLOW', 'TOMENU.PAK'),
                      'MID1': rd('MIDGAMES', 'MID1.PAK'), 'MIDGAMES': rd('MIDGAMES', 'MIDGAMES.PAK')}
         self.files = {'MOUSE': open(os.path.join(D, 'MOUSE.SHP'), 'rb').read(),
                       'FORMFONT': open(os.path.join(D, 'FONTS', 'FORMFONT.SHP'), 'rb').read(),
                       'OPTFONT': open(os.path.join(D, 'FONTS', 'OPTFONT.SHP'), 'rb').read(),
-                      'SAVELOAD': open(os.path.join(D, 'GAMEFLOW', 'SAVELOAD.SHP'), 'rb').read()}
+                      'SAVELOAD': open(os.path.join(D, 'GAMEFLOW', 'SAVELOAD.SHP'), 'rb').read(),
+                      'TM': open(os.path.join(D, 'GAMEFLOW', 'TM.SHP'), 'rb').read(),
+                      'GAUNTMEN': open(os.path.join(D, 'GAMEFLOW', 'GAUNTMEN.SHP'), 'rb').read(),
+                      'BWFONT': open(os.path.join(D, 'GAMEFLOW', 'BWFONT.SHP'), 'rb').read()}
         self.options = os.path.join(D, 'GAMEFLOW', 'OPTIONS.IFF')
         self.base = np.array(realspace.load_palette(os.path.join(D, 'PALETTE', 'PALETTE.IFF')), np.uint8)
         self.out, self.factor = out, factor
@@ -145,6 +148,55 @@ def saveload(art, P, skin, name):
         'font': font(art, 'OPTFONT', P, f'{name}_font')}
 
 
+# The training missions (OPTTEST.EXE overlay 0xCA): a wizard of button bars over the OBJVIEW
+# painting. Per page: TM.SHP panel frame, panel position, buttons (x, y, w, h relative to the
+# panel, up frame, code; the pressed frame follows the up frame). Codes -1 back up, -2 cancel.
+TRAINING_PAGES = {
+    'type': (0, 153, [(0x10, 9, 0x88, 0xc, 1, 2), (0x9b, 9, 0x88, 0xc, 3, 1), ('gauntlet', 0x10, 0x18, 0x87, 0xb, 0, 3),
+                      (0x9b, 0x18, 0x41, 0xc, 5, -1)]),
+    'count': (7, 153, [(0x71 + 17 * i, 9, 0xe, 0xc, 8 + 2 * i, i + 1) for i in range(5)]
+                      + [(0x57, 0x18, 0x41, 0xc, 0x12, -1), (0x9b, 0x18, 0x41, 0xc, 0x14, -2)]),
+    'aircraft': (22, 116, [(x, y, 0x41, 0xc, 0x17 + 2 * (4 * c + r), 4 * c + r + 1)
+                           for c, x in enumerate((9, 0x4d, 0x91, 0xeb)) for r, y in enumerate((7, 0x14, 0x21, 0x2e))]
+                          + [(0x57, 0x3d, 0x41, 0xc, 0x37, -1), (0x9b, 0x3d, 0x41, 0xc, 0x39, -2)]),
+    'more': (59, 153, [(0x57, 9, 0x41, 0xc, 0x3c, 1), (0x9b, 9, 0x41, 0xc, 0x3e, 2),
+                       (0x57, 0x18, 0x41, 0xc, 0x40, -1), (0x9b, 0x18, 0x41, 0xc, 0x42, -2)]),
+    'altitude': (68, 153, [(x, 9, 0x41, 0xc, 0x45 + 2 * i, i + 1) for i, x in enumerate((0x13, 0x57, 0x9b, 0xdf))]
+                          + [(0x57, 0x18, 0x41, 0xc, 0x4d, -1), (0x9b, 0x18, 0x41, 0xc, 0x4f, -2)]),
+    'skill': (81, 153, [(x, 9, 0x41, 0xc, 0x52 + 2 * i, i + 1) for i, x in enumerate((0x36, 0x7a, 0xbe))]
+                       + [(0x57, 0x18, 0x41, 0xc, 0x58, -1), (0x9b, 0x18, 0x41, 0xc, 0x5a, -2)]),
+    'accept': (92, 153, [(0x79, 9, 0x41, 0xc, 0x5d, 1), (0x57, 0x18, 0x41, 0xc, 0x5f, -1), (0x9b, 0x18, 0x41, 0xc, 0x61, -2)]),
+}
+# the aircraft list (DS 0x116D, 15-byte records: name, object, loadout, ...), with the remake's ids
+TRAINING_AIRCRAFT = [('F-15', 'F-15'), ('F-16', 'F-16GRAY'), ('F/A-18', 'F-18'), ('C-130', 'C130DES'), ('F-22', 'F-22'),
+                     ('YF-23', 'YF23'), ('A-10', 'A-10'), ('E-3', 'AWACS'), ('Tornado', 'TORNCG'), ('Mirage 2000', 'MIRAGE'),
+                     ('Lear Jet', 'LEARJET'), ('747', '747'), ('MiG-21', 'MIG21'), ('MiG-29', 'MIG29'), ('Su-27', 'SU27'),
+                     ('TU-95', 'TU-20')]
+
+
+def training(art, P):
+    tm, gm = art.frames('TM'), art.frames('GAUNTMEN')
+    pages = {}
+    for name, (frame, py, buttons) in TRAINING_PAGES.items():
+        bs = []
+        for b in buttons:
+            shp = tm
+            if b[0] == 'gauntlet':
+                shp, b = gm, b[1:]
+            x, y, w, h, up, code = b
+            ax, ay = 6 + x, py + y
+            bs.append({'action': code, 'rect': [ax, ay, w, h],
+                       'up': art.shape(shp[up], P, f'tm_{name}_{up}', ax, ay),
+                       'down': art.shape(shp[up + 1], P, f'tm_{name}_{up}_down', ax, ay)})
+        pages[name] = {'panel': art.shape(tm[frame], P, f'tm_{name}', 6, py), 'buttons': bs}
+    return {'background': [art.screen([(art.frames('OBJVIEW', 6)[0], 0, 0), (art.frames('OBJVIEW', 1)[0], 4, 3)], P, 'tm_bg')],
+            'pages': pages, 'font': font(art, 'BWFONT', P, 'bwfont'), 'cursor': cursors(art, P, 'tm'),
+            'aircraft': [{'name': n, 'id': i} for n, i in TRAINING_AIRCRAFT], 'skills': ['rookie', 'veteran', 'ace'],
+            'text': {'df_title': 'Mission Briefing: Air Superiority', 'df_brief': 'Intercept and engage inbound bogeys:',
+                     'sd': ['Mission Briefing: Ground Attack', 'Search and destroy enemy targets at',
+                            "pilot's discretion.  Refer to area", 'map for enemy positions.']}}
+
+
 def cursors(art, P, name):
     fr = art.frames('MOUSE')
     names = ['cross', 'arrow', 'cross_hot', 'arrow_hot']
@@ -185,6 +237,7 @@ def convert(extracted, out_root, factor=4, log=print):
     screens['main']['saveload'] = saveload(a, P, 42, 'sl_main')
     dialogs = {'14': saveload(a, screen_palette(a, 14), 0, 'sl_14'),
                '29': saveload(a, screen_palette(a, 29), 21, 'sl_29')}
+    screens['training'] = training(a, a.palette([('OBJVIEW', 7)]))
     # the licence for a new pilot
     P = a.palette([('OPTPALS', 0x1e)])
     screens['licence'] = {

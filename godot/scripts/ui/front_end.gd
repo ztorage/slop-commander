@@ -18,6 +18,8 @@ var _t := 0.0
 var _idle := 0.0
 var _confirm_quit := false
 var _dialog: SaveDialog = null
+# training
+var _choices: Array = []         # [page, code] in order; Backup removes the last
 # licence
 var _field := 0
 var _text: Array[String] = ["", "", ""]
@@ -46,6 +48,10 @@ func _ready() -> void:
 			Audio.music(String(scr.music.set), int(scr.music.track))
 	elif mode == "licence":
 		Audio.music("midgames", 0x1a)
+	if mode == "training" and OS.get_environment("SC_FRONT_CHOICES") != "":
+		for c in OS.get_environment("SC_FRONT_CHOICES").split(","):
+			var pc := c.split(":")
+			_choices.append([pc[0], int(pc[1])])
 	if OS.get_environment("SC_FRONT_TEST") != "":
 		_front_test.call_deferred()
 
@@ -87,7 +93,7 @@ func _attract() -> void:
 
 # ---------------------------------------------------------------- buttons
 func _enabled(b: Dictionary) -> bool:
-	match String(b.action):
+	match str(b.action):
 		"continue":
 			return Campaign.has_save()
 		"load":
@@ -95,8 +101,14 @@ func _enabled(b: Dictionary) -> bool:
 	return true
 
 
+func _buttons() -> Array:
+	if mode == "training":
+		return scr.pages[_training_state().page].buttons
+	return scr.get("buttons", [])
+
+
 func _button_at(p: Vector2) -> int:
-	var bs: Array = scr.get("buttons", [])
+	var bs: Array = _buttons()
 	for i in bs.size():
 		var r: Array = bs[i].rect
 		if _enabled(bs[i]) and Rect2(float(r[0]), float(r[1]), float(r[2]), float(r[3])).has_point(p):
@@ -115,10 +127,13 @@ func _gui_input(ev: InputEvent) -> void:
 			_pressed = _button_at(_mouse)
 		elif _pressed >= 0:
 			var hit := _button_at(_mouse) == _pressed
-			var b: Dictionary = scr.buttons[_pressed]
+			var b: Dictionary = _buttons()[_pressed]
 			_pressed = -1
 			if hit:
-				_act(String(b.action))
+				if mode == "training":
+					_training_pick(int(b.action))
+				else:
+					_act(String(b.action))
 
 
 func _act(action: String) -> void:
@@ -147,8 +162,7 @@ func _act(action: String) -> void:
 		"new":
 			_goto("licence")
 		"training":
-			GameData.launch = {}
-			get_tree().change_scene_to_file("res://scenes/mission_select.tscn")
+			_goto("training")
 		"objects":
 			GameData.launch = {}
 			get_tree().change_scene_to_file("res://scenes/model_viewer.tscn")
@@ -157,6 +171,90 @@ func _act(action: String) -> void:
 func _goto(m: String) -> void:
 	GameData.launch = {"front": m}
 	get_tree().change_scene_to_file("res://scenes/front_end.tscn")
+
+
+# ---------------------------------------------------------------- training missions
+## Replay the choices: the page to show and the briefing lines drawn so far, as the original's
+## wizard (OPTTEST.EXE overlay 0xCA) builds them: [x, y, text].
+func _training_state() -> Dictionary:
+	var st := {"page": "type", "mode": "", "groups": [], "lines": [], "altitude": 0, "skill": -1}
+	var t: Dictionary = scr.text
+	var x := 0.0
+	var y := 0.0
+	for c in _choices:
+		var page: String = c[0]
+		var code: int = c[1]
+		match page:
+			"type":
+				if code == 1:
+					st.mode = "dogfight"
+					st.lines.append_array([[5, 0x2b, t.df_title], [5, 0x37, t.df_brief]])
+					st.page = "count"
+				else:
+					st.mode = "strike"
+					for i in t.sd.size():
+						st.lines.append([5, 0x2b + 12 * i, t.sd[i]])
+					st.page = "accept"
+			"count":
+				var gi: int = st.groups.size()
+				st.groups.append([code, -1])
+				st.lines.append([20, 0x43 + 12 * gi, str(code)])
+				st.page = "aircraft"
+			"aircraft":
+				var gi: int = st.groups.size() - 1
+				st.groups[gi][1] = code - 1
+				var nm: String = scr.aircraft[code - 1].name + ("." if gi == 2 else "")
+				y = 0x43 + 12 * gi
+				st.lines.append([0x1e, y, nm])
+				x = 0x1e + font_width(scr.font, nm)
+				st.page = "more" if gi < 2 else "altitude"
+			"more":
+				var gi: int = st.groups.size() - 1
+				st.lines.append([x, y, (", and" if gi == 1 else ",") if code == 1 else "."])
+				st.page = "count" if code == 1 else "altitude"
+			"altitude":
+				st.altitude = code * 10000 - 5000
+				st.lines.append([5 + font_width(scr.font, "Altitude: "), 0x67, "%d feet." % st.altitude])
+				st.page = "skill"
+			"skill":
+				st.skill = code - 1
+				var lead := "Intelligence reports indicate "
+				st.lines.append([5 + font_width(scr.font, lead), 0x73, "%s pilots." % scr.skills[code - 1]])
+				st.page = "accept"
+	if st.page in ["altitude", "skill", "accept"] and st.mode == "dogfight":
+		st.lines.append([5, 0x67, "Altitude: "])
+	if st.page in ["skill", "accept"] and st.mode == "dogfight":
+		st.lines.append([5, 0x73, "Intelligence reports indicate "])
+	return st
+
+
+func _training_pick(code: int) -> void:
+	var page: String = _training_state().page
+	if code == -2:                                   # cancel: back to the first page
+		_choices.clear()
+	elif code == -1:                                 # back up: undo the last choice
+		if _choices.is_empty():
+			_goto("main")
+		else:
+			_choices.pop_back()
+	elif page == "type" and code == 3:
+		_training_fly({"SC_SCENARIO": "gauntlet"})
+	elif page == "accept":
+		var st := _training_state()
+		if st.mode == "strike":
+			_training_fly({"SC_SCENARIO": "strike"})
+		else:
+			var groups := []
+			for g in st.groups:
+				groups.append([String(scr.aircraft[int(g[1])].id), int(g[0])])
+			_training_fly({"SC_SCENARIO": "dogfight", "groups": groups, "altitude_ft": st.altitude, "skill": st.skill})
+	else:
+		_choices.append([page, code])
+
+
+func _training_fly(launch: Dictionary) -> void:
+	GameData.launch = launch
+	get_tree().change_scene_to_file("res://scenes/flight.tscn")
 
 
 # ---------------------------------------------------------------- keys
@@ -170,6 +268,10 @@ func _unhandled_key_input(ev: InputEvent) -> void:
 		return
 	if mode == "licence":
 		_licence_key(k)
+		return
+	if mode == "training":
+		if k.keycode == KEY_ESCAPE:
+			_training_pick(-1)
 		return
 	if _confirm_quit:
 		if k.keycode == KEY_Y:
@@ -229,7 +331,12 @@ func _draw() -> void:
 	var mod := Color(fade, fade, fade)
 	for e in scr.background:
 		draw_entry(e, Vector2.ZERO, mod)
-	var bs: Array = scr.get("buttons", [])
+	if mode == "training":
+		var st := _training_state()
+		draw_entry(scr.pages[st.page].panel, Vector2.ZERO, mod)
+		for l in st.lines:
+			draw_font_text(scr.font, String(l[2]), Vector2(float(l[0]), float(l[1])), mod)
+	var bs: Array = _buttons()
 	for i in bs.size():
 		if _enabled(bs[i]):
 			var held := i == _pressed and _button_at(_mouse) == i

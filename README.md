@@ -100,6 +100,23 @@ Gamepads: left stick flies, triggers are throttle, A fires, X next weapon, Y tar
 - `docs/FORMATS.md` — reverse-engineered file format notes
 - `godot/` — the game project
 
+## Known Issues
+
+1. The game engine is janky:
+    - Weapons are implemented poorly
+    - Controls are all over the place
+    - Camera angles are a lot to be desired
+    - Objectives aren't programmed well in many missions
+    - Autopilot half-functional (e.g., auto-landing misses the runway, but somehow survives)
+    - AA vulcan is not implemented (target trailing)
+    - Balancing, or lack there of (ground units are crazy overpowered)
+    - Some targets don't show up
+    - Targeting cameras are missing
+    - Much, much more
+2. Upscaled graphics are... well... experimental
+3. Various UI elements, ledger bookkeeping, inventory, ordering equipment
+
+
 ## Legal
 
 Strike Commander is © Origin Systems / Electronic Arts. This project is an unofficial, non-commercial

@@ -37,6 +37,8 @@ func _ready() -> void:
 	add_child(shot)
 	if Campaign.returning:
 		_after_mission.call_deferred()
+	elif String(GameData.launch.get("campaign", "new")) == "loaded":
+		_show_screen()
 	elif String(GameData.launch.get("campaign", "new")) == "continue" and Campaign.load_game():
 		_show_screen()
 	else:
@@ -123,12 +125,13 @@ func _run(efct: Array, sprite: Dictionary) -> void:
 			Op.TUNE_MODIFIER:
 				Campaign.tune_modifier = v
 			Op.SAVE:
-				Campaign.save_game()
-				await _show_notice("Game saved.", 1.5)
+				var r := await _save_dialog(true)
+				if r.get("action") == "ok":
+					Campaign.save_game(String(r.name))
 			Op.LOAD:
-				if Campaign.load_game():
+				var r := await _save_dialog(false)
+				if r.get("action") == "ok" and Campaign.load_game(String(r.name)):
 					_next_stage = 0
-					await _show_notice("Game loaded.", 1.2)
 			Op.SHOW_MAP:
 				var pts: Array = Campaign.gameflow.get("maps", {}).get(str(v), {}).get("points", [])
 				if pts.size() > 0:
@@ -145,6 +148,23 @@ func _run(efct: Array, sprite: Dictionary) -> void:
 					_warned[op] = true
 					_log("unhandled story opcode %d (%d)" % [op, v])
 	_busy = false
+
+
+## The original save/load dialog, in the skin and palette of the screen it is opened from.
+func _save_dialog(saving: bool) -> Dictionary:
+	var path := GameData.path("frontend/frontend.json")
+	if OS.get_environment("SC_STORY_TEST") != "":       # the automated walk-through doesn't stop here
+		return {}
+	if not FileAccess.file_exists(path):
+		if saving:
+			Campaign.save_game()
+			return {}
+		return {"action": "ok", "name": ""} if Campaign.has_save() else {}
+	var dialogs: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path)).get("saveload", {})
+	var spec = dialogs.get(str(Campaign.scene_id), dialogs.get("14"))
+	var d := SaveDialog.new().setup(spec, saving, null, "frontend/")
+	add_child(d)
+	return await d.closed
 
 
 func _condition(op: int, v: int) -> bool:

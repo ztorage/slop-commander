@@ -17,6 +17,7 @@ var _mouse := Vector2(-100, -100)
 var _t := 0.0
 var _idle := 0.0
 var _confirm_quit := false
+var _dialog: SaveDialog = null
 # licence
 var _field := 0
 var _text: Array[String] = ["", "", ""]
@@ -56,6 +57,8 @@ func _exit_tree() -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	_idle += delta
+	if _dialog != null:
+		_idle = 0.0
 	if mode == "main" and _idle > _attract_after():
 		_attract()
 	elif mode == "chooser" and _idle > float(scr.get("timeout_s", 120.0)):
@@ -85,8 +88,10 @@ func _attract() -> void:
 # ---------------------------------------------------------------- buttons
 func _enabled(b: Dictionary) -> bool:
 	match String(b.action):
-		"continue", "load":
+		"continue":
 			return Campaign.has_save()
+		"load":
+			return not Campaign.list_saves().is_empty()
 	return true
 
 
@@ -127,9 +132,18 @@ func _act(action: String) -> void:
 		"tactical":
 			GameData.launch = {}
 			get_tree().change_scene_to_file("res://scenes/mission_select.tscn")
-		"continue", "load":
+		"continue":
 			GameData.launch = {"campaign": "continue"}
 			get_tree().change_scene_to_file("res://scenes/campaign.tscn")
+		"load":
+			_dialog = SaveDialog.new().setup(scr.saveload, false, scr.cursor.get("arrow"), DIR)
+			add_child(_dialog)
+			var r: Dictionary = await _dialog.closed
+			_dialog = null
+			_idle = 0.0
+			if r.action == "ok" and Campaign.load_game(String(r.name)):
+				GameData.launch = {"campaign": "loaded"}
+				get_tree().change_scene_to_file("res://scenes/campaign.tscn")
 		"new":
 			_goto("licence")
 		"training":
@@ -186,7 +200,7 @@ func _licence_key(k: InputEventKey) -> void:
 			if _text[_field] == "":
 				c = c.to_upper()
 			var t: String = _text[_field] + c
-			if t.length() > int(scr.max_len) or _width(t) > float(f[_field].max_w):
+			if t.length() > int(scr.max_len) or font_width(scr.font, t) > float(f[_field].max_w):
 				return
 			_text[_field] = t
 
@@ -207,27 +221,6 @@ func _dev_menu() -> void:
 
 
 # ---------------------------------------------------------------- drawing
-func _width(s: String) -> float:
-	var fnt: Dictionary = scr.font
-	var w := 0.0
-	for ch in s:
-		var g = fnt.glyphs.get(str(ch.unicode_at(0)))
-		w += float(g.advance) if g != null else float(fnt.space)
-	return w
-
-
-func _text_at(s: String, at: Vector2) -> void:
-	var fnt: Dictionary = scr.font
-	var x := at.x
-	for ch in s:
-		var g = fnt.glyphs.get(str(ch.unicode_at(0)))
-		if g == null:
-			x += float(fnt.space)
-			continue
-		draw_entry(g, Vector2(x, at.y + float(fnt.height) - 1.0))
-		x += float(g.advance)
-
-
 func _draw() -> void:
 	draw_backdrop()
 	if data.is_empty():
@@ -245,11 +238,11 @@ func _draw() -> void:
 		for i in scr.fields.size():
 			var f: Dictionary = scr.fields[i]
 			var s: String = _text[i] + ("_" if i == _field and int(_t * 2.0) % 2 == 0 else "")
-			_text_at(s, Vector2(float(f.x), float(f.y)))
+			draw_font_text(scr.font, s, Vector2(float(f.x), float(f.y)))
 	if _confirm_quit:
 		draw_caption("Exit Strike Commander? (Y/N)", 176.0, Color(0.95, 0.92, 0.8))
 	var cur = scr.cursor.get("arrow")
-	if cur != null and Rect2(0, 0, W, H).has_point(_mouse):
+	if cur != null and _dialog == null and Rect2(0, 0, W, H).has_point(_mouse):
 		draw_entry(cur, _mouse.floor())
 
 
@@ -258,6 +251,20 @@ func _front_test() -> void:
 	await get_tree().create_timer(0.8).timeout
 	_mouse = Vector2(160, 70)
 	capture("front_%s" % mode)
+	if mode == "main":
+		for saving in [false, true]:
+			var d := SaveDialog.new().setup(scr.saveload, saving, scr.cursor.get("arrow"), DIR)
+			d.names = PackedStringArray(["ANKARA", "BETA", "CAIRO", "DELTA", "ECHO", "FOXTROT", "GOLF"])
+			d.text = "CAIRO"
+			add_child(d)
+			d._mouse = Vector2(150, 140)
+			await get_tree().create_timer(0.3).timeout
+			await capture("front_dialog_%s" % ("save" if saving else "load"))
+			if saving:
+				d.confirm = "overwrite"
+				await get_tree().create_timer(0.3).timeout
+				await capture("front_dialog_overwrite")
+			d.queue_free()
 	if mode == "licence":
 		_text = ["Stern", "Ken", "Wolfman"] as Array[String]
 		await get_tree().create_timer(0.3).timeout

@@ -276,6 +276,16 @@ entries). The intro is two overlay functions: image offset 0x671A0 (shots 1-8) w
   FORMFONT fields last name (91, 97), first name (174, 97), callsign (124, 103): letters and
   space, at most 15 characters and 57 / 50 / 98 pixels, Enter/Tab to the next, "_" marks the
   active field. Glyph pixels are palette indices (colour 2).
+- Save/load dialog (OPTTEST.EXE overlay 0xC5, entry at image 0x56F8C (dialog, mode)):
+  `SAVELOAD.SHP` holds three skins of 21 frames (0 for most screens, 21 when opened from
+  location screen 29, 42 from the main menu), each meant for its screen's palette. Frames: 0
+  dialog ("SAVE GAME") at (80, 30), 1 "LOAD GAME" title at (114, 36), 2/3 save and 4/5 load at
+  +(54, 97), 6/7 cancel +(10, 112), 8/9 quit to DOS +(94, 112), 10/11 up +(9, 41), 12/13 down
+  +(9, 83), 14 slider thumb at (93, 82 + 25 * top / (count - 5)), 15 "are you sure" box at
+  (101, 85) with 17/18 yes +(18, 25) and 19/20 no +(69, 25), 16 "overwrite" over its title at
+  (119, 96). Name field (110, 56)-(233, 66), text at (113, 58); list (110, 71)-(233, 121), five
+  10-pixel rows; OPTFONT. Names are DOS file names: A-Z, 0-9, at most 8, saved as NAME.SAV;
+  Enter saves (asking before overwriting) or loads; the last save is `gensave` (continue game).
 - `MOUSE.SHP`: crosshair (11 x 11, hotspot 5, 5) and arrow, each with a highlighted copy.
 
 ## Not yet examined ⬜

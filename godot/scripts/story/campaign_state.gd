@@ -2,7 +2,8 @@ extends Node
 ## Campaign state (autoload "Campaign"): the converted story data and the player's progress
 ## through it. Survives the switch to the flight scene and back.
 
-const SAVE_PATH := "user://campaign.json"
+const SAVE_PATH := "user://campaign.json"       # the last save ("continue game"; gensave)
+const SAVE_DIR := "user://saves/"               # named saves, NAME.sav (8 characters, as on DOS)
 
 var gameflow := {}      # story stages, maps, state changes, mission list (gamedata/story/gameflow.json)
 var screens := {}       # location screens (screens.json)
@@ -114,24 +115,42 @@ func _op(v: int, op: int, amount: int) -> int:
 		_: return amount
 
 
-func save_game() -> void:
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if f == null:
-		return
-	f.store_string(JSON.stringify({"stage": stage, "scene": scene_id, "flags": flags, "cash": cash,
+## Save the game; a named save also becomes the one "continue game" resumes.
+func save_game(save_name := "") -> void:
+	var text := JSON.stringify({"stage": stage, "scene": scene_id, "flags": flags, "cash": cash,
 		"projected": projected, "overhead": overhead, "next": next_stage_id, "flown": flown,
 		"last_flown": last_flown, "tune": tune_modifier, "weapons": weapons, "kills": kills,
-		"wingman": wingman}))
+		"wingman": wingman, "first_name": first_name, "last_name": last_name, "callsign": callsign})
+	var paths := [SAVE_PATH]
+	if save_name != "":
+		DirAccess.make_dir_recursive_absolute(SAVE_DIR)
+		paths.append(SAVE_DIR + save_name.to_upper() + ".sav")
+	for p in paths:
+		var f := FileAccess.open(p, FileAccess.WRITE)
+		if f:
+			f.store_string(text)
 
 
 func has_save() -> bool:
 	return FileAccess.file_exists(SAVE_PATH)
 
 
-func load_game() -> bool:
-	if not has_save():
+func list_saves() -> PackedStringArray:
+	var out := PackedStringArray()
+	if not DirAccess.dir_exists_absolute(SAVE_DIR):
+		return out
+	for f in DirAccess.get_files_at(SAVE_DIR):
+		if f.to_lower().ends_with(".sav"):
+			out.append(f.get_basename().to_upper())
+	out.sort()
+	return out
+
+
+func load_game(save_name := "") -> bool:
+	var path := SAVE_PATH if save_name == "" else SAVE_DIR + save_name.to_upper() + ".sav"
+	if not FileAccess.file_exists(path):
 		return false
-	var d = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	var d = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not d is Dictionary:
 		return false
 	new_game()
@@ -151,4 +170,7 @@ func load_game() -> bool:
 		weapons[int(k)] = int(d.weapons[k])
 	kills = d.kills
 	wingman = String(d.wingman)
+	first_name = String(d.get("first_name", first_name))
+	last_name = String(d.get("last_name", last_name))
+	callsign = String(d.get("callsign", callsign))
 	return true

@@ -99,3 +99,24 @@ func _wrap(font: Font, text: String, fs: int, width: float) -> PackedStringArray
 	if line != "":
 		out.append(line)
 	return out
+
+
+## Width of a string in one of the game's bitmap fonts ({glyphs: {code: entry + advance}, space}).
+func font_width(fnt: Dictionary, s: String) -> float:
+	var w := 0.0
+	for ch in s:
+		var g = fnt.glyphs.get(str(ch.unicode_at(0)))
+		w += float(g.advance) if g != null else float(fnt.space)
+	return w
+
+
+## Draw a string in a bitmap font with its top-left at `at` (original pixels).
+func draw_font_text(fnt: Dictionary, s: String, at: Vector2, modulate_ := Color.WHITE) -> void:
+	var x := at.x
+	for ch in s:
+		var g = fnt.glyphs.get(str(ch.unicode_at(0)))
+		if g == null:
+			x += float(fnt.space)
+			continue
+		draw_entry(g, Vector2(x, at.y + float(fnt.height) - 1.0), modulate_)
+		x += float(g.advance)

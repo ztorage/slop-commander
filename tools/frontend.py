@@ -10,6 +10,8 @@ Layouts are from the code (see FORMATS.md, "Front end"):
              (45, 24) whose engraved labels are the disabled look; a button draws MAINMENU 0
              frame i (up) or 5 + i (pressed) at panel + (11, 10 + 17 i), 210 x 14; palette
              OPTPALS 0x15 + 0x18 + MID1 0x3b + MAINMENU 2.
+  save/load  SAVELOAD.SHP: three skins of 21 frames (0: most screens, 21: screen 29, 42: the main
+             menu), each drawn under its screen's palette; dialog at (80, 30), see `saveload()`.
   licence    OPTSHPS 0xa0 under OPTPALS 0x1e; FORMFONT text fields (last name, first name,
              callsign) at (91, 97), (174, 97), (124, 103), at most 15 letters and 57/50/98 px.
 
@@ -18,7 +20,7 @@ Output: gamedata/frontend/{frontend.json, *.png}
 import json, os, struct
 import numpy as np
 from PIL import Image
-import shape, pak, realspace, upscale
+import shape, pak, realspace, upscale, iff
 
 
 class Art:
@@ -29,7 +31,10 @@ class Art:
                      'MAINMENU': rd('GAMEFLOW', 'MAINMENU.PAK'), 'TOMENU': rd('GAMEFLOW', 'TOMENU.PAK'),
                      'MID1': rd('MIDGAMES', 'MID1.PAK'), 'MIDGAMES': rd('MIDGAMES', 'MIDGAMES.PAK')}
         self.files = {'MOUSE': open(os.path.join(D, 'MOUSE.SHP'), 'rb').read(),
-                      'FORMFONT': open(os.path.join(D, 'FONTS', 'FORMFONT.SHP'), 'rb').read()}
+                      'FORMFONT': open(os.path.join(D, 'FONTS', 'FORMFONT.SHP'), 'rb').read(),
+                      'OPTFONT': open(os.path.join(D, 'FONTS', 'OPTFONT.SHP'), 'rb').read(),
+                      'SAVELOAD': open(os.path.join(D, 'GAMEFLOW', 'SAVELOAD.SHP'), 'rb').read()}
+        self.options = os.path.join(D, 'GAMEFLOW', 'OPTIONS.IFF')
         self.base = np.array(realspace.load_palette(os.path.join(D, 'PALETTE', 'PALETTE.IFF')), np.uint8)
         self.out, self.factor = out, factor
         self._frames = {}
@@ -103,6 +108,43 @@ def font(art, key, P, name):
     return {'glyphs': glyphs, 'space': 3, 'height': max((g['h'] for g in glyphs.values()), default=6)}
 
 
+def screen_palette(art, sid):
+    """The palette of an OPTIONS.IFF location screen: base + BACK and FORE patches."""
+    for sc in iff.load(art.options)[0].find(b'SCEN'):
+        if sc.first(b'INFO').data[0] == sid:
+            return art.palette([('OPTPALS', sc.first(b'BACK').first(b'PALT').data[0]),
+                                ('OPTPALS', sc.first(b'FORE').first(b'PALT').data[0])])
+    return art.palette([])
+
+
+def saveload(art, P, skin, name):
+    """The save/load dialog (OPTTEST.EXE overlay 0xC5): frames of one skin and the layout.
+    Frame k of a skin: 0 dialog ("SAVE GAME"), 1 "LOAD GAME" title, 2/3 save, 4/5 load,
+    6/7 cancel, 8/9 quit to DOS, 10/11 up, 12/13 down, 14 slider, 15 "are you sure" box,
+    16 "overwrite", 17/18 yes, 19/20 no (odd/even = up/pressed)."""
+    fr = art.frames('SAVELOAD')
+    f = lambda k: fr[skin + k]
+    dx, dy = 80, 30
+    def button(action, k, x, y, w, h, ox=dx, oy=dy):
+        return {'action': action, 'rect': [ox + x, oy + y, w, h],
+                'up': art.shape(f(k), P, f'{name}_{k}', ox + x, oy + y),
+                'down': art.shape(f(k + 1), P, f'{name}_{k + 1}', ox + x, oy + y)}
+    cx, cy = 0x65, 0x55
+    return {
+        'body': art.shape(f(0), P, f'{name}_0', dx, dy),
+        'load_title': art.shape(f(1), P, f'{name}_1', 0x72, 0x24),
+        'save': button('ok', 2, 0x36, 0x61, 0x4b, 0xc), 'load': button('ok', 4, 0x36, 0x61, 0x4b, 0xc),
+        'buttons': [button('cancel', 6, 0xa, 0x70, 0x50, 0xc), button('quit', 8, 0x5e, 0x70, 0x50, 0xc),
+                    button('up', 10, 9, 0x29, 0x14, 0xb), button('down', 12, 9, 0x53, 0x14, 0xb)],
+        'slider': art.shape(f(14), P, f'{name}_14', 0, 0), 'slider_x': 0x5d, 'slider_y': 0x52, 'slider_range': 25,
+        'name_at': [0x71, 0x3a], 'name_rect': [0x6e, 0x38, 0xe9, 0x42], 'max_len': 8,
+        'list_rect': [0x6e, 0x47, 0xe9, 0x79], 'rows': 5, 'row_h': 10,
+        'confirm': {'box': art.shape(f(15), P, f'{name}_15', cx, cy),
+                    'overwrite': art.shape(f(16), P, f'{name}_16', 0x77, 0x60),
+                    'buttons': [button('yes', 17, 0x12, 0x19, 0x2e, 0xc, cx, cy), button('no', 19, 0x45, 0x19, 0x2c, 0xc, cx, cy)]},
+        'font': font(art, 'OPTFONT', P, f'{name}_font')}
+
+
 def cursors(art, P, name):
     fr = art.frames('MOUSE')
     names = ['cross', 'arrow', 'cross_hot', 'arrow_hot']
@@ -139,6 +181,10 @@ def convert(extracted, out_root, factor=4, log=print):
                      'down': a.shape(b[5 + i], P, f'main_{i}_down', px + 11, py + 10 + 17 * i)}
                     for i, act in enumerate(acts)],
         'cursor': cursors(a, P, 'main'), 'music': {'set': 'midgames', 'track': 0x17}, 'idle_s': 30.0}
+    # the save/load dialog: the main menu's skin, and the two location screens that save
+    screens['main']['saveload'] = saveload(a, P, 42, 'sl_main')
+    dialogs = {'14': saveload(a, screen_palette(a, 14), 0, 'sl_14'),
+               '29': saveload(a, screen_palette(a, 29), 21, 'sl_29')}
     # the licence for a new pilot
     P = a.palette([('OPTPALS', 0x1e)])
     screens['licence'] = {
@@ -148,7 +194,7 @@ def convert(extracted, out_root, factor=4, log=print):
                    {'key': 'callsign', 'x': 124, 'y': 103, 'max_w': 98}],
         'max_len': 15, 'font': font(a, 'FORMFONT', P, 'formfont'), 'cursor': cursors(a, P, 'licence')}
     with open(os.path.join(out, 'frontend.json'), 'w') as f:
-        json.dump({'screens': screens}, f, separators=(',', ':'))
+        json.dump({'screens': screens, 'saveload': dialogs}, f, separators=(',', ':'))
     log(f'  front end: {", ".join(screens)}')
     return {'frontend': 'frontend/frontend.json'}
 

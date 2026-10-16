@@ -46,11 +46,17 @@ the `godot/` project. Without it, the game shows instructions and does not start
 | F1 | cockpit | F2 | chase camera |
 | F3 / F4 / F5 | look left / right / back | F6 | external (orbit, mouse-drag) |
 | Z (or F1 again) | cockpit zoomed onto the HUD | Y | padlock: track the target |
-| Right-drag | free look in the cockpit | F9 / F10 | victim / weapon camera (again: back) |
+| Right-drag | free look in the cockpit | F9 | automatic victim camera on/off |
+| F10 | weapon camera (again: back) | A | autopilot: take-off / jump to nav point / landing |
 | `[` `]` | cycle views | D | right MFD: weapons / damage |
 | Ctrl+I | cockpit art on/off | Ctrl+R / Shift+R | restart / restart airborne |
 | N | navigation map | Shift+Tab / Tab (hold) | time compression 1×/2×/4× / 6× |
 | Esc | menu | | |
+
+The victim camera cuts to the target as your missile or bomb arrives and cuts back a few
+seconds later; a crippled aircraft is followed down until it hits the ground. In the air, the
+autopilot shows one fly-by and the jet emerges at the next nav point (or short of it when
+enemies are in the way); the music only changes for enemies and the mission's end.
 
 Gamepads: left stick flies, triggers are throttle, A fires, X next weapon, Y target, B decoys.
 

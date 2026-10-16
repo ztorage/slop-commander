@@ -10,6 +10,9 @@ var hp := 30.0
 var max_hp := 30.0
 var alive := true
 var ejected := false
+var crippled := false              # fatally hit: falls out of control until it hits the ground
+var crippled_time := 0.0
+var _spiral_bank := 0.0
 var death_reason := ""
 var hit_radius := 5.0
 var weapons := WeaponSystem.new()
@@ -21,6 +24,7 @@ var velocity_world: Vector3:
 	get: return fm.velocity
 var _damage_smoke: GPUParticles3D
 var _afterburner_nodes: Array[Node3D] = []
+var _afterburner_mats: Array[StandardMaterial3D] = []
 var _gear_nodes: Array[Node3D] = []
 var _model: Node3D
 
@@ -54,6 +58,7 @@ func _build_visuals() -> void:
 		var n := String(c.model).to_upper()
 		if n.ends_with("AB") or n.ends_with("-AB"):
 			_afterburner_nodes.append(child)
+			_make_glow(child)
 		elif n.contains("GEAR"):
 			gear_frames.append(child)
 		else:
@@ -115,6 +120,27 @@ func on_damaged(by: Aircraft) -> void:
 		add_child(_damage_smoke)
 
 
+## Fatally damaged but not blown apart: engine out, burning, falling until it hits the ground.
+func cripple() -> void:
+	crippled = true
+	if _damage_smoke == null:
+		_damage_smoke = Effects.smoke_trail(Color(0.12, 0.12, 0.12), 45.0, 5.0, 6.0)
+		_damage_smoke.position = Vector3(0, 0, 3)
+		add_child(_damage_smoke)
+	var fire := OmniLight3D.new()
+	fire.light_color = Color(1.0, 0.55, 0.2)
+	fire.light_energy = 4.0
+	fire.omni_range = 30.0
+	fire.position = Vector3(0, 0, 3)
+	add_child(fire)
+	var flames := Effects.smoke_trail(Color(1.0, 0.55, 0.15), 40.0, 0.6, 3.5)
+	flames.position = Vector3(0, 0, 2.5)
+	add_child(flames)
+	fm.throttle = 0.0
+	fm.afterburner = 0.0
+	_spiral_bank = deg_to_rad(randf_range(110.0, 140.0)) * (1.0 if randf() < 0.5 else -1.0)
+
+
 func missile_warning(m: Missile) -> void:
 	incoming.append(m)
 
@@ -132,6 +158,8 @@ func place(pos: Vector3, heading_deg: float, speed: float, on_ground: bool) -> v
 	fm.afterburner = 0.0
 	hp = max_hp
 	alive = true
+	crippled = false
+	crippled_time = 0.0
 	ejected = false
 	death_reason = ""
 	_model.visible = true
@@ -142,9 +170,38 @@ func simulate(dt: float, terrain: Terrain) -> void:
 	if not alive:
 		return
 	var gh := func(x: float, z: float) -> float: return maxf(terrain.height_at(x, z), 0.0)
+	if crippled:
+		# death spiral: rolled past the vertical and pulling, so the nose falls through
+		var bank := -fm.basis.get_euler(EULER_ORDER_YXZ).z
+		fm.stick = Vector2(clampf((_spiral_bank - bank) * 1.5, -1.0, 1.0), 0.2)
+		fm.throttle = 0.0
 	fm.step(dt, gh)
 	fm.check_terrain(gh)
 	_sync()
+
+
+## Afterburner cones: see-through, additive glow instead of the original's solid polygons.
+func _make_glow(root: Node) -> void:
+	for mi in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh: Mesh = (mi as MeshInstance3D).mesh
+		if mesh == null:
+			continue
+		for i in mesh.get_surface_count():
+			var src := mesh.surface_get_material(i) as StandardMaterial3D
+			var m := StandardMaterial3D.new()
+			if src:
+				m.albedo_texture = src.albedo_texture
+				m.albedo_color = src.albedo_color
+				m.texture_filter = src.texture_filter
+			m.albedo_color.a = 0.7
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			m.cull_mode = BaseMaterial3D.CULL_DISABLED
+			m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+			(mi as MeshInstance3D).set_surface_override_material(i, m)
+			_afterburner_mats.append(m)
+		(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func _sync() -> void:
@@ -152,5 +209,9 @@ func _sync() -> void:
 	var ab := fm.afterburner > 0.0 and fm.has_afterburner
 	for n in _afterburner_nodes:
 		n.visible = ab
+	if ab:
+		var a := clampf(0.45 + 0.35 * fm.afterburner, 0.0, 0.85) * randf_range(0.8, 1.0)   # flicker
+		for m in _afterburner_mats:
+			m.albedo_color.a = a
 	for n in _gear_nodes:
 		n.visible = fm.gear_down

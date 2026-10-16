@@ -31,6 +31,8 @@ func update(dt: float, world: CombatWorld) -> void:
 	if mission_actor and not mission_actor.active:
 		_idle()
 		return
+	if me.crippled:
+		return   # out of control: the controls stay where the hit left them
 	var pos := me.global_position
 	var vel := fm.velocity
 	var agl := pos.y - world.ground_height(pos)
@@ -97,7 +99,8 @@ func defend(world: CombatWorld) -> bool:
 	fm.throttle = 1.0
 	fm.afterburner = 1.0
 	if _decoy_timer <= 0.0 and md < 3000.0:
-		me.weapons.drop_decoy(world, m.infrared)
+		if OS.get_environment("SC_TEST_NODECOY") == "" or me.team == 0:   # test: bandits don't decoy
+			me.weapons.drop_decoy(world, m.infrared)
 		_decoy_timer = randf_range(0.6, 1.1)
 	return true
 
@@ -224,12 +227,17 @@ var _approach_passed := false
 
 
 func _land(world: CombatWorld) -> bool:
-	_state = "landing"
 	var a := mission_actor
-	var fm := me.fm
-	var pos := me.global_position
 	var approach := runner.spot_world(a.command_arg)
 	var touchdown := runner.spot_world(a.command_arg2) if a.command_arg2 != 255 else approach
+	return land_to(world, approach, touchdown, a.command_arg2 != 255)
+
+
+## Fly to `approach`, then down a 3-degree glide path along approach -> touchdown, flare and stop.
+func land_to(world: CombatWorld, approach: Vector3, touchdown: Vector3, use_approach := true) -> bool:
+	_state = "landing"
+	var fm := me.fm
+	var pos := me.global_position
 	touchdown.y = world.ground_height(touchdown)
 	if fm.on_ground:
 		fm.throttle = 0.0
@@ -238,7 +246,7 @@ func _land(world: CombatWorld) -> bool:
 		fm.stick = Vector2.ZERO
 		return true
 	var to_app := Vector2(approach.x - pos.x, approach.z - pos.z).length()
-	if not _approach_passed and to_app > 1500.0 and a.command_arg2 != 255:
+	if not _approach_passed and to_app > 1500.0 and use_approach:
 		approach.y = maxf(approach.y, world.ground_height(approach) + 250.0)
 		_steer(approach, deg_to_rad(40.0), 0.15)
 		fm.throttle = 0.55
@@ -251,12 +259,17 @@ func _land(world: CombatWorld) -> bool:
 	var glide_alt := touchdown.y + flat * tan(deg_to_rad(3.0))
 	var aim := touchdown + runway_dir * 400.0
 	aim.y = glide_alt - 20.0
-	_steer(aim, deg_to_rad(25.0), 0.1)
+	# wings nearly level close to the ground (a wingtip would touch first)
+	_steer(aim, deg_to_rad(lerpf(4.0, 25.0, clampf((agl - 15.0) / 80.0, 0.0, 1.0))), 0.1)
 	fm.gear_down = true
-	fm.throttle = 0.3 if agl > 40.0 else 0.0
-	fm.airbrake = fm.airspeed > fm.wing_area * 0.0 + 90.0
-	if agl < 12.0:
-		fm.stick = Vector2(0, 0.25)   # flare
+	# hold the approach speed with throttle and airbrake
+	const VREF := 75.0
+	fm.afterburner = 0.0
+	fm.throttle = clampf(0.3 + (VREF - fm.airspeed) * 0.05, 0.0, 0.9) if agl > 8.0 else 0.0
+	fm.airbrake = fm.airspeed > VREF + 4.0
+	if agl < 15.0:
+		# flare: trade the sink rate away just above the runway
+		fm.stick = Vector2(0, clampf((-fm.velocity.y - 1.0) * 0.12, 0.0, 0.5))
 	return true
 
 

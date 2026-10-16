@@ -21,6 +21,12 @@ var _runway_index := 0
 var _acc := 0.0
 var _power := 0.0                 # 0..1 military throttle, 1..2 afterburner stages
 var _chute: Node3D
+var flight_audio: FlightAudio
+var autopilot := ""               # "", "takeoff", "cruise", "landing"
+var _ap: AIPilot
+var _ap_runway := {}
+var _ap_nav := -1                 # nav point the cruise autopilot is flying to
+var _ap_jumped := false           # the in-air jump to the destination has been made
 var _view_before_death := CameraRig.View.CHASE
 var mission: MissionRunner
 var mission_name := ""
@@ -75,11 +81,15 @@ func _ready() -> void:
 	world.aircraft_destroyed.connect(_on_destroyed)
 	world.weapon_released.connect(func(w, by): if by == player: cam.weapon_node = w)
 	world.ground_destroyed.connect(func(u): if u.last_attacker == player: cam.victim_node = u)
+	world.impact_imminent.connect(_on_impact_imminent)
+	world.weapon_outcome.connect(_on_weapon_outcome)
+	world.aircraft_crippled.connect(_on_crippled)
 	player = Aircraft.create(aircraft_name)
 	player.team = 0
 	world.add_aircraft(player)
 	cam = CameraRig.new()
 	cam.target = player
+	cam.ground_height = world.ground_height
 	add_child(cam)
 	cam.make_current()
 	var ui := CanvasLayer.new()
@@ -101,6 +111,7 @@ func _ready() -> void:
 	nav_map.visible = false
 	ui.add_child(nav_map)
 	var fa := FlightAudio.new()
+	flight_audio = fa
 	add_child(fa)
 	cam.doppler_tracking = Camera3D.DOPPLER_TRACKING_PHYSICS_STEP
 	if scenario == "mission":
@@ -247,7 +258,11 @@ func reset_in_air() -> void:
 
 # ---------------------------------------------------------------- simulation
 func _physics_process(delta: float) -> void:
-	if _test == "mission":
+	if OS.get_environment("SC_AP_TEST") != "":
+		_ap_test(delta)
+	if autopilot != "":
+		_autopilot_step(delta)
+	elif _test == "mission":
 		_mission_test(delta)
 	elif _test == "attack":
 		_attack_test(delta)
@@ -298,8 +313,58 @@ func _on_mission_over(success: bool, reason: String) -> void:
 	_compress = 1.0
 
 
+# ---------------------------------------------------------------- victim camera
+## F9 toggles it. When on, the view cuts to the target as the player's missile or bomb arrives
+## (or when the gun cripples/kills an aircraft): a hit, miss or outright kill cuts back after a
+## few seconds; a crippled aircraft is followed down until it blows up on the ground, and the
+## view cuts back a couple of seconds after that.
+var victim_cam := true
+var _victim_weapon: Node3D
+
+
+func _victim_ok() -> bool:
+	return victim_cam and player.alive and not player.ejected and autopilot == "" \
+			and cam.view not in [CameraRig.View.WEAPON, CameraRig.View.ORBIT]
+
+
+func _on_impact_imminent(weapon: Node3D, target: Node3D) -> void:
+	if weapon.get("shooter") != player or not _victim_ok() or not is_instance_valid(target):
+		return
+	if not (target is Aircraft or target is GroundUnit or target == weapon):
+		return   # chasing a decoy
+	if cam.view == CameraRig.View.VICTIM and cam.victim_node != target and cam.victim_node.get("crippled") == true:
+		return   # already following a falling jet down
+	_victim_weapon = weapon
+	cam.show_victim(target)
+
+
+func _on_weapon_outcome(weapon: Node3D, target: Node3D, result: String) -> void:
+	if _test == "combat" and weapon.get("shooter") == player:
+		print("VICTIM %.1f outcome %s view=%d" % [_test_t, result, cam.view])
+	if weapon != _victim_weapon or cam.view != CameraRig.View.VICTIM:
+		return
+	_victim_weapon = null
+	match result:
+		"miss":
+			cam.victim_done(1.5)
+		"hit", "killed":
+			cam.victim_done(3.0)
+		"crippled":
+			pass       # followed until it hits the ground (_on_destroyed)
+
+
+func _on_crippled(a: Aircraft, by: Node3D) -> void:
+	if by == player and cam.view != CameraRig.View.VICTIM and _victim_ok():
+		cam.show_victim(a)
+
+
 func _on_destroyed(a: Aircraft) -> void:
 	if a != player and a.last_attacker == player:
+		if cam.view == CameraRig.View.VICTIM and cam.victim_node == a:
+			cam.victim_done(2.0 if a.fm.crashed else 3.0)   # down on the ground / blown apart
+		elif _victim_ok() and cam.view != CameraRig.View.VICTIM and _victim_weapon == null:
+			cam.show_victim(a)                               # e.g. a gun kill
+			cam.victim_done(3.0)
 		cam.victim_node = a
 	if _test == "combat" and a == player:
 		print("EVENT %.1f: player destroyed (%s)" % [_test_t, a.death_reason])
@@ -320,8 +385,6 @@ func _on_destroyed(a: Aircraft) -> void:
 		return
 	if _test == "combat":
 		print("EVENT %.1f: %s destroyed (%s)" % [_test_t, a.data.name, a.death_reason])
-		cam.orbit_node = a          # watch the kill from outside
-		cam.view = CameraRig.View.ORBIT
 		for delay in [0.25, 0.8]:
 			get_tree().create_timer(delay).timeout.connect(func(): _shot("kill_%.2f" % delay))
 	var left := world.aircraft.filter(func(x): return x.team == 1 and x.alive).size()
@@ -430,12 +493,18 @@ func _unhandled_input(ev: InputEvent) -> void:
 			cam.set_view(CameraRig.View.COCKPIT_REAR)
 		elif k == KEY_F6:
 			cam.set_view(CameraRig.View.ORBIT)
-		elif k == KEY_F9:   # victim camera: the current target, else the last thing you destroyed
-			if w.target and is_instance_valid(w.target) and w.target.get("alive") == true:
-				cam.victim_node = w.target
-			cam.set_view(CameraRig.View.VICTIM)
+		elif k == KEY_F9:   # victim camera on/off
+			victim_cam = not victim_cam
+			if not victim_cam and cam.view == CameraRig.View.VICTIM:
+				cam.victim_done(0.0)
+			hud.add_radio("", "VICTIM CAMERA " + ("ON" if victim_cam else "OFF"))
 		elif k == KEY_Z:
 			cam.toggle_zoom()
+		elif k == KEY_A:
+			if autopilot != "":
+				_autopilot_off("AUTOPILOT OFF")
+			else:
+				_autopilot_on()
 		elif k == KEY_F10:
 			cam.set_view(CameraRig.View.WEAPON)
 		elif k == KEY_Y:
@@ -496,6 +565,236 @@ func _flight_autopilot(delta: float) -> void:
 		18.0: CameraRig.View.COCKPIT_RIGHT, 20.0: CameraRig.View.COCKPIT_REAR, 23.0: CameraRig.View.COCKPIT_FRONT, 28.0: CameraRig.View.CHASE}
 	_test_views(plan)
 	if t > 30.0 or player.fm.crashed:
+		get_tree().quit()
+
+
+# ---------------------------------------------------------------- autopilot
+## A: auto take-off on the runway; in the air, one fly-by shot and then the jet emerges at the
+## current nav point (or wherever enemies would be met on the way, wingmen coming along); for a
+## landing nav point the jump goes to the approach, which is then flown down to the runway.
+## The music is left to the director (it changes only for enemies and the mission's end).
+## Refused when enemies are near; any stick or throttle input takes control back.
+const AP_THREAT_RANGE := 8.0 * 1852.0
+
+
+func _autopilot_on() -> void:
+	if not player.alive or player.ejected:
+		return
+	if _enemies_near(AP_THREAT_RANGE):
+		hud.add_radio("", "AUTOPILOT UNAVAILABLE — ENEMIES NEARBY")
+		return
+	_ap = AIPilot.new(player, 0.8)
+	_ap_jumped = false
+	var n: Dictionary = mission.current_nav() if mission else {}
+	if player.fm.on_ground:
+		autopilot = "takeoff"
+	elif not n.is_empty() and int(n.op) == MissionRunner.OP_LAND or n.is_empty() and not _runways.is_empty():
+		autopilot = "landing"
+		_ap_runway = _nearest_runway(n.pos if not n.is_empty() else player.global_position)
+	elif not n.is_empty():
+		autopilot = "cruise"
+		_ap_nav = mission.nav_index
+	else:
+		hud.add_radio("", "AUTOPILOT: NO NAVIGATION POINT")
+		return
+	hud.add_radio("", "AUTOPILOT: " + {"takeoff": "TAKE-OFF", "cruise": "TO " + String(n.get("label", "")).to_upper(), "landing": "APPROACH"}[autopilot])
+	cam.start_flyby()
+
+
+func _autopilot_off(reason: String) -> void:
+	if autopilot == "":
+		return
+	autopilot = ""
+	_compress = 1.0
+	cam.end_flyby()
+	if OS.get_environment("SC_AP_TEST") != "":
+		print("AP off: ", reason)
+	player.fm.brakes = false
+	if reason != "":
+		hud.add_radio("", reason)
+
+
+func _enemies_near(radius: float) -> bool:
+	return _enemies_near_point(player.global_position, radius)
+
+
+func _nearest_runway(p: Vector3) -> Dictionary:
+	var best := {}
+	var bd := INF
+	for r in _runways:
+		var c: Array = r.center_ft
+		var d := Vector2(c[0] * FT - p.x, -c[1] * FT - p.z).length()
+		if d < bd:
+			bd = d
+			best = r
+	return best
+
+
+func _autopilot_step(delta: float) -> void:
+	var fm := player.fm
+	# any pilot input disengages
+	if absf(Input.get_axis("roll_left", "roll_right")) > 0.3 or absf(Input.get_axis("pitch_down", "pitch_up")) > 0.3 \
+			or Input.is_action_pressed("throttle_up") or Input.is_action_pressed("throttle_down"):
+		if OS.get_environment("SC_AP_TEST") != "":
+			print("AP input: roll %.2f pitch %.2f" % [Input.get_axis("roll_left", "roll_right"), Input.get_axis("pitch_down", "pitch_up")])
+		_autopilot_off("AUTOPILOT OFF")
+		return
+	if autopilot != "takeoff" and _enemies_near(AP_THREAT_RANGE):
+		_autopilot_off("AUTOPILOT DISENGAGED — ENEMIES NEARBY")
+		return
+	_ap._decoy_timer -= delta
+	match autopilot:
+		"takeoff":
+			if fm.on_ground:
+				_ap._takeoff_roll()
+			else:
+				var ahead := -player.global_basis.z
+				_ap._cruise(player.global_position + Vector3(ahead.x, 0, ahead.z).normalized() * 3000.0 + Vector3.UP * 600.0, 1.0)
+				if player.global_position.y - world.ground_height(player.global_position) > 60.0:
+					fm.gear_down = false
+				if player.global_position.y - world.ground_height(player.global_position) > 450.0:
+					_autopilot_off("AUTOPILOT: TAKE-OFF COMPLETE")
+		"cruise":
+			var n: Dictionary = mission.current_nav() if mission else {}
+			if n.is_empty():
+				_autopilot_off("AUTOPILOT OFF")
+				return
+			var target: Vector3 = n.pos
+			target.y = maxf(player.global_position.y, world.ground_height(target) + 900.0)
+			_ap._cruise(target, 0.85)
+			fm.gear_down = false
+			if cam.flyby_passes >= 1 and not _ap_jumped:
+				_ap_jumped = true
+				var label := String(n.get("label", "")).to_upper()
+				if _ap_jump(target, 600.0):
+					_autopilot_off("AUTOPILOT DISENGAGED — ENEMIES AHEAD")
+				else:
+					_autopilot_off("AUTOPILOT: ARRIVED AT " + label)
+		"landing":
+			if _ap_runway.is_empty():
+				_autopilot_off("AUTOPILOT: NO RUNWAY")
+				return
+			var c: Array = _ap_runway.center_ft
+			var heading: float = _ap_runway.heading_deg
+			var dir := Vector3(sin(deg_to_rad(heading)), 0, -cos(deg_to_rad(heading)))
+			var centre := Vector3(c[0] * FT, 0, -c[1] * FT)
+			var half := float(_ap_runway.length_ft) * 0.5 * FT
+			# land toward the runway end that faces us
+			if dir.dot(centre - player.global_position) < 0.0:
+				dir = -dir
+			var touchdown := centre - dir * (half - 60.0)
+			var approach := touchdown - dir * 6000.0
+			approach.y = world.ground_height(touchdown) + 6000.0 * tan(deg_to_rad(3.0)) + 30.0
+			if not _ap_jumped:
+				var lined_up := player.global_position.distance_to(approach) < 2500.0 \
+						and (-player.global_basis.z).angle_to(dir) < deg_to_rad(20.0)
+				if not lined_up and cam.flyby_passes < 1:
+					_ap._cruise(approach + Vector3.UP * 300.0, 0.85)
+					fm.gear_down = false
+					return
+				_ap_jumped = true
+				if not lined_up:
+					# emerge on final, gear down at approach speed, lined up with the runway
+					if _ap_jump(approach, 0.0, dir, 85.0):
+						_autopilot_off("AUTOPILOT DISENGAGED — ENEMIES AHEAD")
+						return
+					fm.gear_down = true
+					fm.throttle = 0.3
+					_ap._approach_passed = true
+			_ap.land_to(world, approach, touchdown, true)
+			if fm.on_ground and fm.airspeed < 5.0:
+				_autopilot_off("AUTOPILOT: LANDED")
+
+
+## The autopilot's jump: the jet (and wingmen near it) reappear `short` metres before `dest`,
+## heading along `along` (default: the travel direction), or where enemies would first be met
+## on the way. Returns true when stopped short by enemies.
+func _ap_jump(dest: Vector3, short: float, along := Vector3.ZERO, new_speed := -1.0) -> bool:
+	var from := player.global_position
+	var flat := Vector3(dest.x - from.x, 0, dest.z - from.z)
+	var dir := flat.normalized() if flat.length() > 1.0 else -player.global_basis.z
+	var to := dest - dir * short
+	var stopped := false
+	# walk the route: stop where an enemy would come within autopilot range
+	var dist := Vector2(to.x - from.x, to.z - from.z).length()
+	var step := 500.0
+	var d := 0.0
+	while d < dist:
+		var p := from + dir * d
+		p.y = to.y
+		if _enemies_near_point(p, AP_THREAT_RANGE * 1.15):
+			to = from + dir * maxf(d - 1500.0, 0.0)
+			to.y = maxf(from.y, world.ground_height(to) + 600.0)
+			stopped = true
+			break
+		d += step
+	var heading_dir := along if along != Vector3.ZERO and not stopped else dir
+	var heading := rad_to_deg(atan2(heading_dir.x, -heading_dir.z))
+	to.y = maxf(to.y, world.ground_height(to) + 300.0)
+	var speed := player.fm.velocity.length() if new_speed < 0.0 or stopped else new_speed
+	var old_basis := player.fm.basis
+	var old_pos := from
+	player.fm.position = to
+	player.fm.basis = Basis(Vector3.UP, deg_to_rad(-heading))
+	player.fm.velocity = -player.fm.basis.z * speed
+	player.fm.rates = Vector3.ZERO
+	var turn := Basis(Vector3.UP, deg_to_rad(-heading)) * old_basis.inverse()
+	turn = Basis(Vector3.UP, turn.get_euler().y)
+	for a in world.aircraft:
+		if a == player or not a.alive or a.team != player.team or a.global_position.distance_to(old_pos) > 6000.0:
+			continue
+		var rel := turn * (a.fm.position - old_pos)
+		a.fm.position = to + rel
+		a.fm.position.y = maxf(a.fm.position.y, world.ground_height(a.fm.position) + 200.0)
+		a.fm.basis = turn * a.fm.basis
+		a.fm.velocity = turn * a.fm.velocity.normalized() * speed if new_speed >= 0.0 else turn * a.fm.velocity
+	_acc = 0.0
+	return stopped
+
+
+func _enemies_near_point(p: Vector3, radius: float) -> bool:
+	for a in world.aircraft:
+		if a.alive and a.team != player.team and a.global_position.distance_to(p) < radius:
+			return true
+	for u in world.ground_units:
+		if u.alive and u.team >= 0 and u.team != player.team and not u.weapon.is_empty() \
+				and u.global_position.distance_to(p) < float(u.weapon.get("range_ft", 0)) * FT:
+			return true
+	return false
+
+
+## Autopilot test: engages A whenever the autopilot is idle, logs phases, saves fly-by frames.
+var _ap_t := 0.0
+var _ap_log := 0.0
+
+
+func _ap_test(delta: float) -> void:
+	_ap_t += delta * time_scale
+	if _ap_t < 1.0:
+		return
+	if autopilot == "" and not _test_shots.has("ap_done") and int(_ap_t) % 3 == 0:
+		if player.fm.on_ground and _ap_t > 5.0 and _test_shots.has("ap_engaged"):
+			_test_shots["ap_done"] = true
+			print("AP finished on the ground at t=%.0f" % _ap_t)
+			get_tree().create_timer(1.0).timeout.connect(get_tree().quit)
+			return
+		_autopilot_on()
+		_test_shots["ap_engaged"] = true
+		print("AP engage t=%.0f -> %s" % [_ap_t, autopilot])
+	if _ap_t - _ap_log > 10.0:
+		_ap_log = _ap_t
+		var gp := world.ground_height(player.global_position)
+		print("AP t=%5.0f mode=%s agl=%5.0fm spd=%3.0fkt gear=%s nav=%s music=%d crashed=%s" % [_ap_t, autopilot,
+			player.global_position.y - gp, player.fm.airspeed / 0.5144, player.fm.gear_down,
+			mission.current_nav().get("label", "-") if mission else "-", Audio.engine.current, player.fm.crashed])
+		if not _test_shots.has("flyby_to") and autopilot == "takeoff":
+			_test_shots["flyby_to"] = true
+			_shot("ap_flyby_takeoff")
+		if not _test_shots.has("flyby") and autopilot == "cruise":
+			_test_shots["flyby"] = true
+			_shot("ap_flyby")
+	if _ap_t > float(_env("SC_TEST_SECONDS", "400")) or player.fm.crashed:
+		print("AP end t=%.0f crashed=%s (%s) on_ground=%s" % [_ap_t, player.fm.crashed, player.fm.crash_reason, player.fm.on_ground])
 		get_tree().quit()
 
 
@@ -640,6 +939,9 @@ func _attack_test(delta: float) -> void:
 
 
 ## AI vs AI: the player's jet is flown by an AIPilot against one MiG-29.
+var _test_last_view := -1
+
+
 func _combat_test(delta: float) -> void:
 	_test_t += delta
 	var t := _test_t
@@ -653,6 +955,13 @@ func _combat_test(delta: float) -> void:
 	if OS.get_environment("SC_CAM_TEST") != "":
 		_camera_tour()
 		return
+	if cam.view != _test_last_view:
+		print("VIEW %.1f: %d -> %d%s" % [t, _test_last_view, cam.view, " (victim crippled=%s)" % cam.victim_node.get("crippled") if cam.view == CameraRig.View.VICTIM else ""])
+		_test_last_view = cam.view
+		if cam.view == CameraRig.View.VICTIM:
+			var n := _test_shots.size()
+			for delay in [0.3, 2.0]:
+				get_tree().create_timer(delay).timeout.connect(func(): _shot("victim_%d_%.1f" % [n, delay]))
 	var plan := {5.0: CameraRig.View.CHASE, 20.0: CameraRig.View.COCKPIT_FRONT, 35.0: CameraRig.View.CHASE,
 		50.0: CameraRig.View.COCKPIT_FRONT, 65.0: CameraRig.View.ORBIT}
 	if world.aircraft.filter(func(x): return x.team == 1 and not x.alive).is_empty():
@@ -701,7 +1010,8 @@ func _test_views(plan: Dictionary) -> void:
 	for mark in plan:
 		if _test_t >= mark - 0.1 and not _test_shots.has(mark - 0.1):
 			_test_shots[mark - 0.1] = true
-			cam.view = plan[mark]
+			if cam.view != CameraRig.View.VICTIM:
+				cam.view = plan[mark]
 		if _test_t >= mark and not _test_shots.has(mark):
 			_test_shots[mark] = true
 			_shot("t%02d" % int(mark))

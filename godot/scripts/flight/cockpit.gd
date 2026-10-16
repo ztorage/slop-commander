@@ -195,7 +195,7 @@ func _draw_radar_contacts(r: Rect2) -> void:
 		if a is GroundUnit:
 			draw_polyline(PackedVector2Array([p + Vector2(0, -4), p + Vector2(4, 0), p + Vector2(0, 4), p + Vector2(-4, 0), p + Vector2(0, -4)]), col, 1.5)
 		else:
-			draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), col, a == w.target, 1.5)
+			draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), col, a == w.target, -1.0 if a == w.target else 1.5)
 	for m in world.missiles:
 		var l: Vector3 = inv * m.global_position
 		var p := origin + Vector2(l.x, l.z) * scale

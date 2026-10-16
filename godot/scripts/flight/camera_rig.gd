@@ -3,11 +3,14 @@ extends Camera3D
 ## Camera views, following the original's set:
 ##   cockpit front (F1; press again for the view zoomed onto the HUD), left/right/back (F3-F5),
 ##   chase (F2), external orbit (F6), victim camera (F9), weapon camera (F10).
+## The victim camera cuts to the target as a weapon arrives; flight_scene decides when to cut
+## back (a few seconds after a hit, miss or mid-air kill; after the wreck hits the ground when
+## the target was crippled).
 ## In the cockpit: Y tracks (padlocks) the selected target; dragging with the right mouse button
 ## looks around freely and snaps back on release. Special views return to the previous view when
 ## toggled again or when their subject is gone.
 
-enum View { COCKPIT_FRONT, COCKPIT_LEFT, COCKPIT_RIGHT, COCKPIT_REAR, CHASE, ORBIT, VICTIM, WEAPON }
+enum View { COCKPIT_FRONT, COCKPIT_LEFT, COCKPIT_RIGHT, COCKPIT_REAR, CHASE, ORBIT, VICTIM, WEAPON, FLYBY }
 
 const EYE := Vector3(0, 1.1, -4.2)
 const COCKPIT_FOV := 58.0
@@ -35,6 +38,27 @@ var _orbit_pitch := -0.25
 var _orbit_dist := 25.0
 var _special_timeout := 0.0
 var _gaze_off := 0.0               # angle between gaze and the painted view's direction
+var _victim_pos := Vector3.ZERO
+var _victim_return := -1.0         # seconds until the victim view cuts back; < 0: still following
+var _flyby_pos := Vector3.ZERO
+var _flyby_set := false
+var flyby_passes := 0
+var ground_height: Callable        # terrain height at a position (keeps the fly-by camera above ground)
+const FLYBY_MIN_AGL := 6.0         # m (~20 ft)              # how many times the jet has flown past the fly-by camera
+
+
+## Autopilot cinematic: a fixed camera ahead of the jet that watches it pass, then moves on.
+func start_flyby() -> void:
+	if view != View.FLYBY:
+		_prev_view = view if view in CYCLE else _prev_view
+	view = View.FLYBY
+	_flyby_set = false
+	flyby_passes = 0
+
+
+func end_flyby() -> void:
+	if view == View.FLYBY:
+		view = _prev_view
 
 
 func _ready() -> void:
@@ -62,6 +86,25 @@ func set_view(v: View) -> void:
 		_special_timeout = 0.0
 	view = v
 	free_look = Vector2.ZERO
+
+
+## Cut to the victim camera on `node` (kept until victim_done is called, or a safety timeout).
+func show_victim(node: Node3D) -> void:
+	if view not in [View.VICTIM, View.WEAPON, View.FLYBY]:
+		_prev_view = view
+	victim_node = node
+	_victim_pos = node.global_position
+	_victim_return = -1.0
+	_special_timeout = 4.0             # no word on the outcome by then (overshoot): go back
+	_orbit_yaw = randf_range(-PI, PI)
+	_orbit_pitch = -0.2
+	view = View.VICTIM
+
+
+## Return from the victim camera `delay` seconds from now (if it is showing).
+func victim_done(delay: float) -> void:
+	if view == View.VICTIM and (_victim_return < 0.0 or delay < _victim_return):
+		_victim_return = delay
 
 
 ## Z: toggle the front cockpit view's zoom onto the HUD (switching to the cockpit if needed).
@@ -121,11 +164,41 @@ func update_view(delta: float) -> void:
 			return
 		View.VICTIM:
 			_set_projection(false)
-			if not is_instance_valid(victim_node):
-				view = _prev_view
-				return
+			if is_instance_valid(victim_node) and victim_node.is_inside_tree():
+				if victim_node.get("alive") != false:
+					_victim_pos = victim_node.global_position
+			elif _victim_return < 0.0:
+				_victim_return = 2.0
+			if _victim_return >= 0.0:
+				_victim_return -= delta
+				if _victim_return <= 0.0:
+					view = _prev_view
+					_victim_return = -1.0
+			else:
+				# following: a crippled jet stays followed down; anything else times out
+				var falling: bool = victim_node.get("crippled") == true and victim_node.get("alive") == true
+				_special_timeout = 4.0 if falling else _special_timeout - delta
+				if _special_timeout <= 0.0:
+					_victim_return = 0.5
 			_orbit_yaw += delta * 0.25
-			_orbit_at(victim_node.global_position, maxf(_orbit_dist, 45.0))
+			_orbit_at(_victim_pos, maxf(_orbit_dist, 45.0))
+			return
+		View.FLYBY:
+			_set_projection(false)
+			var fwd := -t.basis.z
+			var rel := t.origin - _flyby_pos
+			if not _flyby_set or rel.length() > 900.0 and rel.dot(fwd) > 0.0:
+				if _flyby_set:
+					flyby_passes += 1
+				var side := t.basis.x * (randf_range(40.0, 90.0) * (1.0 if randf() < 0.5 else -1.0))
+				var ahead: Vector3 = target.fm.velocity.normalized() if target.fm.airspeed > 20.0 else fwd
+				var lead := clampf(target.fm.airspeed * 3.0, 180.0, 700.0)   # close in while slow (take-off)
+				_flyby_pos = t.origin + ahead * lead + side + Vector3.UP * randf_range(-15.0, 30.0)
+				_flyby_set = true
+			if ground_height.is_valid():
+				_flyby_pos.y = maxf(_flyby_pos.y, float(ground_height.call(_flyby_pos)) + FLYBY_MIN_AGL)
+			global_position = _flyby_pos
+			look_at(t.origin, Vector3.UP)
 			return
 		View.WEAPON:
 			_set_projection(false)

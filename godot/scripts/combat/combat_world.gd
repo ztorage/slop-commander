@@ -7,6 +7,11 @@ signal aircraft_destroyed(a: Aircraft)
 signal ground_destroyed(u: GroundUnit)
 signal aircraft_damaged(a: Aircraft, by: Node3D)
 signal weapon_released(weapon: Node3D, by: Node3D)
+signal aircraft_crippled(a: Aircraft, by: Node3D)
+## A guided weapon or bomb is about to arrive (about a second to go): for the victim camera.
+signal impact_imminent(weapon: Node3D, target: Node3D)
+## How a weapon's attack ended for its intended target: "miss", "hit", "crippled", "killed".
+signal weapon_outcome(weapon: Node3D, target: Node3D, result: String)
 
 const FT := 0.3048
 const BULLET_LIFE := 2.5
@@ -66,7 +71,11 @@ func step(dt: float) -> void:
 			a.ai.update(dt, self)
 		a.weapons.update(dt, self)
 		if a.fm.crashed:
-			destroy(a, "crashed")
+			destroy(a, "shot down" if a.crippled else "crashed")
+		elif a.crippled:
+			a.crippled_time += dt
+			if a.crippled_time > 45.0:     # never reached the ground (spun over the sea edge etc.)
+				destroy(a, "shot down")
 	for u in ground_units:
 		if u.alive and u.team >= 0 and not u.weapon.is_empty():
 			u.update(dt, self)
@@ -192,13 +201,20 @@ func drop_bomb(from: Aircraft, weapon: Dictionary, target: Node3D) -> void:
 
 func _step_bombs(dt: float) -> void:
 	for b in bombs.duplicate():
+		if not b.has_meta("imminent") and b.velocity.y < -1.0 \
+				and (b.global_position.y - ground_height(b.global_position)) / -b.velocity.y < 1.0:
+			b.set_meta("imminent", true)
+			impact_imminent.emit(b, b.target if is_instance_valid(b.target) else b)
 		if b.step(dt, self):
 			bombs.erase(b)
 			var r := float(b.data.get("blast_radius_ft", 75)) * FT
 			var p := Vector3(b.global_position.x, ground_height(b.global_position), b.global_position.z)
 			Effects.explosion(self, String(b.data.get("explosion", "GRNDEX4")), p + Vector3.UP * r * 0.5, clampf(r * 2.5, 25.0, 140.0))
 			Audio.sfx("explosion_3", p, self, 8.0)
+			var tgt: Node3D = b.target if is_instance_valid(b.target) else null
+			var hp_before: float = tgt.get("hp") if tgt and tgt.get("hp") != null else 0.0
 			_blast(p, r, float(b.data.get("damage", 350)), b.shooter)
+			weapon_outcome.emit(b, tgt if tgt else b, _outcome(tgt, hp_before) if tgt else "hit")
 			b.queue_free()
 
 
@@ -219,8 +235,15 @@ func _blast(p: Vector3, radius: float, amount: float, by: Node3D) -> void:
 func _step_missiles(dt: float) -> void:
 	for m in missiles.duplicate():
 		var boom: bool = m.step(dt, self)
+		if not boom and m.alive and not m.has_meta("imminent") and is_instance_valid(m.target):
+			var closing: float = (m.velocity - (m.target.get("velocity_world") if m.target.get("velocity_world") != null else Vector3.ZERO)).length()
+			if m.global_position.distance_to(m.target.global_position) < closing * 1.0:
+				m.set_meta("imminent", true)
+				impact_imminent.emit(m, m.target)
 		if boom:
 			_detonate(m)
+		elif not m.alive:
+			weapon_outcome.emit(m, m.target if is_instance_valid(m.target) else null, "miss")
 		if boom or not m.alive:
 			if OS.get_environment("SC_COMBAT_TEST") != "":
 				print("MISSILE %s from %s: %s" % [m.data.name, m.shooter.data.name, m.end_reason])
@@ -242,15 +265,28 @@ func _retire_missile(m: Missile) -> void:
 func _detonate(m: Missile) -> void:
 	Effects.explosion(self, String(m.data.get("explosion", "EXPLODE2")), m.global_position, 30.0)
 	Audio.sfx("explosion_2", m.global_position, self, 6.0)
+	var tgt: Node3D = m.target if is_instance_valid(m.target) else null
+	var hp_before: float = tgt.get("hp") if tgt and tgt.get("hp") != null else 0.0
 	if m.target is GroundUnit or m.global_position.y < ground_height(m.global_position) + 30.0:
 		_blast(m.global_position, m.blast_radius, m.damage, m.shooter)
-		return
-	for a in aircraft:
-		if not a.alive or a == m.shooter:
-			continue
-		var d := a.global_position.distance_to(m.global_position)
-		if d < m.blast_radius * 2.0:
-			damage(a, m.damage * clampf(1.4 - d / (m.blast_radius * 2.0), 0.3, 1.0), m.shooter)
+	else:
+		for a in aircraft:
+			if not a.alive or a == m.shooter:
+				continue
+			var d := a.global_position.distance_to(m.global_position)
+			if d < m.blast_radius * 2.0:
+				damage(a, m.damage * clampf(1.4 - d / (m.blast_radius * 2.0), 0.3, 1.0), m.shooter)
+	weapon_outcome.emit(m, tgt, _outcome(tgt, hp_before))
+
+
+func _outcome(t: Node3D, hp_before: float) -> String:
+	if not (t is Aircraft or t is GroundUnit):
+		return "miss"
+	if t.get("alive") == false:
+		return "killed"
+	if t.get("crippled") == true:
+		return "crippled"
+	return "hit" if float(t.get("hp")) < hp_before else "miss"
 
 
 func drop_decoy(from: Aircraft, is_flare: bool) -> void:
@@ -287,11 +323,17 @@ func damage(target: Node3D, amount: float, by: Node3D) -> void:
 	var a := target as Aircraft
 	if not a.alive:
 		return
+	var overkill := amount - a.hp
 	a.hp -= amount
 	a.on_damaged(by as Aircraft)
 	aircraft_damaged.emit(a, by)
 	if a.hp <= 0.0:
-		destroy(a, "shot down")
+		var chance := 0.4 if overkill > a.max_hp * 0.5 else 0.75
+		if not a.crippled and not a.fm.on_ground and a.ai != null and randf() < chance:
+			a.cripple()
+			aircraft_crippled.emit(a, by)
+		else:
+			destroy(a, "shot down")
 
 
 func destroy(a: Aircraft, reason: String) -> void:

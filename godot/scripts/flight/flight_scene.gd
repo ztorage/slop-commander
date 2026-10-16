@@ -37,9 +37,16 @@ func _ready() -> void:
 	cam.make_current()
 	var ui := CanvasLayer.new()
 	add_child(ui)
+	var ckpt_name := "F16-CKPT" if aircraft_name.begins_with("F-16") else ("F22-CKPT" if aircraft_name == "F-22" else "")
+	if ckpt_name != "" and DirAccess.dir_exists_absolute(GameData.path("cockpits/" + ckpt_name)):
+		var ck := Cockpit.create(ckpt_name)
+		ck.aircraft = player
+		ui.add_child(ck)
+		cam.cockpit = ck
 	hud = FlightHud.new()
 	hud.aircraft = player
 	hud.camera = cam
+	hud.cockpit = cam.cockpit
 	ui.add_child(hud)
 	reset_on_runway(0)
 
@@ -137,6 +144,16 @@ func _unhandled_input(ev: InputEvent) -> void:
 			fm.throttle = (ev.keycode - KEY_0) / 10.0
 		elif ev.keycode == KEY_0:
 			fm.throttle = 1.0
+		elif ev.keycode == KEY_I and ev.ctrl_pressed and cam.cockpit:
+			cam.cockpit.art_enabled = not cam.cockpit.art_enabled  # original's Ctrl-I: cockpit on/off
+		elif ev.keycode == KEY_M and cam.cockpit:
+			cam.cockpit.right_mfd = 1 - cam.cockpit.right_mfd
+		elif ev.keycode == KEY_F4:
+			cam.view = CameraRig.View.COCKPIT_LEFT
+		elif ev.keycode == KEY_F5:
+			cam.view = CameraRig.View.COCKPIT_RIGHT
+		elif ev.keycode == KEY_F6:
+			cam.view = CameraRig.View.COCKPIT_REAR
 		elif ev.keycode == KEY_BRACKETLEFT:
 			cam.cycle(-1)
 		elif ev.keycode == KEY_BRACKETRIGHT:
@@ -156,7 +173,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 	elif ev.is_action_pressed("reset_air"):
 		reset_in_air()
 	elif ev.is_action_pressed("view_cockpit"):
-		cam.view = CameraRig.View.COCKPIT
+		cam.view = CameraRig.View.COCKPIT_FRONT
 	elif ev.is_action_pressed("view_chase"):
 		cam.view = CameraRig.View.CHASE
 		cam.snap()
@@ -184,10 +201,14 @@ func _autopilot(delta: float) -> void:
 	elif t >= 32.0:
 		var roll := rad_to_deg(-fm.basis.get_euler(EULER_ORDER_YXZ).z)
 		fm.stick.x = clampf(-roll / 30.0, -1, 1)
-	for mark in [3.0, 12.0, 18.0, 23.0, 28.0]:
+	var plan := {2.0: CameraRig.View.COCKPIT_FRONT, 12.0: CameraRig.View.COCKPIT_FRONT, 16.0: CameraRig.View.COCKPIT_LEFT,
+		18.0: CameraRig.View.COCKPIT_RIGHT, 20.0: CameraRig.View.COCKPIT_REAR, 23.0: CameraRig.View.COCKPIT_FRONT, 28.0: CameraRig.View.CHASE}
+	for mark in plan:
+		if t >= mark - 0.1 and not _test_shots.has(mark - 0.1):
+			_test_shots[mark - 0.1] = true
+			cam.view = plan[mark]  # switch a moment early so the frame is rendered in that view
 		if t >= mark and not _test_shots.has(mark):
 			_test_shots[mark] = true
-			cam.view = CameraRig.View.COCKPIT if mark == 23.0 else CameraRig.View.CHASE
 			_shot("t%02d" % int(mark))
 	if int(t * 2) != int((t - delta) * 2):
 		print("t=%5.1f gnd=%s v=%5.1fkt alt=%6.0fft pitch=%5.1f roll=%5.1f aoa=%4.1f G=%4.1f thr=%.0fN fuel=%.0f %s" % [

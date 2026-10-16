@@ -34,7 +34,9 @@ the `godot/` project. Without it, the game shows instructions and does not start
 | `+` `-` / `1`–`0` | throttle | Backspace / Tab | afterburner |
 | G | landing gear | B | air brake |
 | W | wheel brakes | R / T | restart on runway / in the air |
-| F1 / F2 / F3, `[` `]` | cockpit / chase / orbit view | Esc | menu |
+| F1 / F2 / F3, `[` `]` | cockpit / chase / orbit view | F4 / F5 / F6 | look left / right / back |
+| Ctrl+I | cockpit art on/off (HUD only) | M | right MFD: weapons / damage |
+| Esc | menu | | |
 
 Gamepads work too (left stick, triggers for throttle, shoulders for afterburner/air brake).
 

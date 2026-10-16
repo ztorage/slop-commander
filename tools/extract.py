@@ -18,7 +18,7 @@ ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 import disc, tre_extract
 
-CONVERTER_VERSION = 4
+CONVERTER_VERSION = 5
 
 REQUIRED = ['BIGTRE.TRE', 'LILTRE.TRE', 'VOCLIST.TRE']
 OPTIONAL = ['TOBIGTRE.TRE', 'TOVOCLST.TRE']  # Tactical Operations add-on
@@ -109,7 +109,13 @@ def step_aircraft(extracted, assets, upscale):
     aircraft.convert(os.path.join(extracted, 'BIGTRE', 'DATA', 'OBJECTS'), os.path.join(assets, 'aircraft'), log)
 
 
-STEPS = [('models', step_models), ('terrain', step_terrain), ('aircraft', step_aircraft)]
+def step_cockpits(extracted, assets, upscale):
+    import cockpit
+    cockpit.convert(os.path.join(extracted, 'BIGTRE', 'DATA', 'OBJECTS'), os.path.join(assets, 'cockpits'), upscale, log)
+
+
+STEPS = [('models', step_models), ('terrain', step_terrain), ('aircraft', step_aircraft),
+         ('cockpits', step_cockpits)]
 
 
 def main():

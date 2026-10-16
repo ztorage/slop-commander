@@ -74,9 +74,26 @@ Values checked against real aircraft (F-16, F-15, Su-27, MiG-21, A-10, 747, C-13
 - `WEAP/WPNS`: `u16 count, char weapon[8]` per station; `DCOY`: chaff, flares.
 The remake uses these as parameters of its own physics model (`godot/scripts/flight/flight_model.gd`).
 
+## Shapes ✅ (`tools/shape.py`)
+Origin RLE shapes: `i16 right, left, top, bottom` (extents around a hotspot; w = left+right+1,
+h = top+bottom+1), then fragments until `u16 0`: `u16 code, i16 dx, i16 dy` relative to the hotspot.
+`code & 1 == 0` → `code >> 1` raw palette bytes; `code & 1 == 1` → `code >> 1` texels as sub-runs
+(`u8 sub`: even = `sub >> 1` raw bytes, odd = one byte repeated `sub >> 1` times). Unwritten = transparent.
+Containers: `"LZ" + u32 size + LZW`, or a PAK of shapes whose `0x20`-flagged entries are `u32 size + LZW`.
+
+## Cockpits ✅ (`FORM CKPT` in OBJECTS, `tools/cockpit.py`)
+All art is for a 320×200 screen. `ARTP` = PAK of full-screen views (0 front, 1 left, 2 right,
+3 rear, 4 front with panel lowered); `EJEC` = 15-frame ejection; `GHUD`/`GUNF` overlays.
+`INST/<name>/INFO` = `i16 x1, y1, x2, y2, cx, cy` (+ more for RAWS/MWRN) with `SHAP` (dial face,
+needles with the pivot as hotspot): AIRS airspeed, ALTI altimeter (long + short needle), MWRN
+warning lights, RAWS radar warning (NORM in-panel scope, ZOOM for an MFD, SYMB threat symbols).
+`MONI`: MFD bezel `SHAP`, `SPOT` = 5-byte records `char side ('L'/'R'), i16 x, y` for zoomed MFDs;
+`MFDS/<mode>` (AARD air radar, AGRD ground radar, GCAM gun camera, WEAP, DAMG, COMM) with `INFO`
+(first bytes include the preferred side) and `SHAP` symbology. In-panel MFD screens and the HUD
+glass are painted into the art; their rectangles are measured and stored in `tools/cockpit.py`.
+
 ## Not yet examined ⬜
-Missions (`MISN-*.IFF`), cockpits (`CKPT`),
-shapes/sprites (`*.SHP`), fonts, gameflow/conversations, FLIC cutscenes (`*.FLX`), XMIDI music,
+Missions (`MISN-*.IFF`), fonts, gameflow/conversations, FLIC cutscenes (`*.FLX`), XMIDI music,
 VOC speech, flight model constants.
 
 ## Credits

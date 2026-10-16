@@ -1,0 +1,23 @@
+# Original game data and anything derived from it must never be committed.
+/extracted/
+/gamedata/
+/shots/
+*.TRE
+*.PAK
+*.cue
+*.img
+*.bin
+*.iso
+*.ccd
+*.sub
+
+# Tooling
+/.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Godot
+/godot/.godot/
+/godot/export_presets.cfg
+/build/

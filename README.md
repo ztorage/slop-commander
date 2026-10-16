@@ -1,6 +1,6 @@
-# Strike Commander Remake (Godot 4, macOS)
+# Slop Commander (Godot 4, macOS)
 
-A from-scratch reimplementation of Origin Systems' *Strike Commander* (1993) in Godot 4, with
+A from-scratch, affectionately named remake of Origin Systems' *Strike Commander* (1993) in Godot 4, with
 upscaled textures and modern rendering.
 
 **This repository contains no original game code or assets.** To play you need your own copy of the
@@ -49,7 +49,7 @@ over the picture beneath them, so they line up when the game draws them.
 | `gamedata/`   | converted assets the game loads at runtime       | no      |
 
 The game looks for `gamedata/` in `$SC_GAMEDATA`, then the app's user-data folder
-(`~/Library/Application Support/Godot/app_userdata/Strike Commander Remake/gamedata`), then next to
+(`~/Library/Application Support/Godot/app_userdata/Slop Commander/gamedata`), then next to
 the `godot/` project. Without it, the game shows instructions and does not start.
 
 ## Controls (follows the original reference card)

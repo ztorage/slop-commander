@@ -66,7 +66,7 @@ func _show_menu() -> void:
 	box.add_theme_constant_override("separation", 14)
 	add_child(box)
 	var title := Label.new()
-	title.text = "STRIKE COMMANDER — remake (development build)"
+	title.text = "SLOP COMMANDER — development build"
 	title.add_theme_font_size_override("font_size", 26)
 	box.add_child(title)
 	var ed := Label.new()

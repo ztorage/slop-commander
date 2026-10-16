@@ -356,7 +356,7 @@ func _draw() -> void:
 			var s: String = _text[i] + ("_" if i == _field and int(_t * 2.0) % 2 == 0 else "")
 			draw_font_text(scr.font, s, Vector2(float(f.x), float(f.y)))
 	if _confirm_quit:
-		draw_caption("Exit Strike Commander? (Y/N)", 176.0, Color(0.95, 0.92, 0.8))
+		draw_caption("Exit Slop Commander? (Y/N)", 176.0, Color(0.95, 0.92, 0.8))
 	var cur = scr.cursor.get("arrow")
 	if cur != null and _dialog == null and Rect2(0, 0, W, H).has_point(_mouse):
 		draw_entry(cur, _mouse.floor())

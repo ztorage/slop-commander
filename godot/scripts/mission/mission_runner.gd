@@ -184,15 +184,13 @@ func _spawn(a: MissionActor, scene) -> void:
 		ac.place(pos, float(a.part.heading), 0.0 if on_ground else 190.0, on_ground)
 		a.node = ac
 	else:
-		var m := GameData.load_model(model)
-		if m == null:
-			m = Node3D.new()
-		for lod in m.find_children("LOD*", "", true, false):
-			lod.visible = lod.name == "LOD0"
-		world.add_child(m)
-		m.global_position = pos
-		m.rotation.y = deg_to_rad(-float(a.part.heading))
-		a.node = m
+		var u := GroundUnit.create(model, 0 if a.friendly else 1)
+		world.add_ground_unit(u)
+		if pos.y < _ground(pos) + 2.0 or int(a.part.pos_ft[2]) == 0:
+			pos.y = _ground(pos)
+		u.global_position = pos
+		u.rotation.y = deg_to_rad(-float(a.part.heading))
+		a.node = u
 	_run(a, int(a.part.prog_activated))
 
 
@@ -362,6 +360,8 @@ func _run(actor: MissionActor, prog: int, depth := 0, task_state := 0) -> int:
 				var t := actor_by_id(arg)
 				if t and t.node is Aircraft:
 					world.destroy(t.node, "destroyed")
+				elif t and t.node is GroundUnit:
+					world.damage(t.node, 1e6, null)
 				elif t:
 					t.destroyed = true
 			OP_DIST_TARGET:

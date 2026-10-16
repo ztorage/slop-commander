@@ -47,6 +47,9 @@ func _ready() -> void:
 	if OS.get_environment("SC_MISSION_TEST") != "":
 		_test = "mission"
 		scenario = "mission"
+	if OS.get_environment("SC_ATTACK_TEST") != "":
+		_test = "attack"
+		scenario = "strike"
 	if _test == "combat":
 		scenario = "dogfight"
 		bandits = 1
@@ -60,13 +63,14 @@ func _ready() -> void:
 		var w: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(wf)) if FileAccess.file_exists(wf) else {}
 		theatre = String(w.get("terrain", mission_data.world))
 	_setup_world()
+	world = CombatWorld.new()
 	terrain = Terrain.new()
+	terrain.world = world
+	world.terrain = terrain
 	add_child(terrain)
+	add_child(world)
 	terrain.load_theatre(theatre, true)
 	_runways = JSON.parse_string(FileAccess.get_file_as_string(GameData.path("terrain/%s/runways.json" % theatre)))
-	world = CombatWorld.new()
-	world.terrain = terrain
-	add_child(world)
 	world.aircraft_destroyed.connect(_on_destroyed)
 	player = Aircraft.create(aircraft_name)
 	player.team = 0
@@ -153,6 +157,9 @@ func start() -> void:
 		_chute = null
 	cam.target = player
 	cam.orbit_node = null
+	if scenario == "strike":
+		_setup_strike()
+		return
 	if scenario == "dogfight":
 		var p := Vector3(0, 3000.0, 20000.0)
 		bandits = maxi(bandits, 0)
@@ -171,6 +178,28 @@ func start() -> void:
 			get_tree().create_timer(5.0).timeout.connect(func(): if hud.message.begins_with(str(bandits)): hud.message = "")
 	else:
 		reset_on_runway(_runway_index)
+
+
+## Strike practice: an armoured position with AAA and SAM cover 10 km ahead.
+func _setup_strike() -> void:
+	var start_pos := Vector3(0, 0, 25000.0)
+	start_pos.y = world.ground_height(start_pos) + 1200.0
+	player.place(start_pos, 0.0, 210.0, false)
+	_power = 0.8
+	var centre := start_pos + Vector3(0, 0, -11000.0)
+	var layout := [["T-72", Vector3(0, 0, 0)], ["T-72", Vector3(60, 0, 40)], ["T-72", Vector3(-70, 0, 30)],
+		["ZSU-23", Vector3(150, 0, -120)], ["MOBSAMLN", Vector3(-400, 0, -350)], ["STASAMLN", Vector3(500, 0, -600)],
+		["HANGB22", Vector3(-200, 0, 260)]]
+	for item in layout:
+		var u := GroundUnit.create(item[0], 1)
+		world.add_ground_unit(u)
+		var p: Vector3 = centre + item[1]
+		p.y = world.ground_height(p)
+		u.global_position = p
+		if OS.get_environment("SC_NO_SAMS") != "":
+			u.ammo = 0
+	hud.message = "STRIKE PRACTICE — W: select AGM-65 / MK82   T: ground target   SPACE: fire / release"
+	get_tree().create_timer(6.0).timeout.connect(func(): if hud.message.begins_with("STRIKE"): hud.message = "")
 
 
 func _clear_combat() -> void:
@@ -211,6 +240,8 @@ func reset_in_air() -> void:
 func _physics_process(delta: float) -> void:
 	if _test == "mission":
 		_mission_test(delta)
+	elif _test == "attack":
+		_attack_test(delta)
 	elif OS.get_environment("SC_EJECT_TEST") != "":
 		_test_t += delta
 		if _test_t > 2.0 and not player.ejected:
@@ -488,6 +519,89 @@ func _mission_test(delta: float) -> void:
 			print("UNKNOWN OPS ", mission.unknown_ops)
 			_shot("end")
 			get_tree().create_timer(1.0).timeout.connect(get_tree().quit)
+
+
+func _strike_centre() -> Vector3:
+	for u in world.ground_units:
+		if u.team == 1 and u.alive:
+			return u.global_position
+	return player.global_position
+
+
+## Scripted strike: Maverick on the nearest target, then a Mk 82 pass using the CCIP solution.
+var _attack_phase := 0
+
+
+func _attack_test(delta: float) -> void:
+	_test_t += delta
+	var fm := player.fm
+	var w := player.weapons
+	if _test_pilot == null:
+		_test_pilot = AIPilot.new(player, 0.8)
+		world.ground_destroyed.connect(func(u): print("EVENT %.1f: %s destroyed" % [_test_t, u.unit_name]))
+	if int(_test_t * 2) != int((_test_t - delta) * 2):
+		var geo := ""
+		if w.target:
+			var to: Vector3 = w.target.global_position - player.global_position
+			geo = "off=%.1f dist=%.0f" % [rad_to_deg((-player.global_basis.z).angle_to(to)), to.length()]
+		print(geo, " t=%5.1f phase=%d wpn=%s tgt=%s lock=%.1f hp=%d alt=%.0fm missiles=%d bombs=%d" % [_test_t, _attack_phase, w.selected_name(),
+			w.target.name if w.target else "-", w.lock_progress, player.hp, fm.position.y - world.ground_height(fm.position), world.missiles.size(), world.bombs.size()])
+	_test_pilot._decoy_timer -= delta
+	if _test_pilot.defend(world):
+		return
+	match _attack_phase:
+		0:  # Maverick
+			w.select_kind("ag")
+			if w.target == null:
+				w.cycle_target(world, 1)
+			var aim_at := _strike_centre()
+			if w.target:
+				aim_at = w.target.global_position
+			_test_pilot._cruise(aim_at + Vector3.UP * (250.0 if w.target else 500.0), 0.8)
+			if w.locked():
+				w.fire(delta, world, true)
+				_shot("maverick")
+				_attack_phase = 1
+		1:  # bomb run on the next target: level at ~300 m AGL, release on the CCIP
+			w.select_kind("bomb")
+			if w.target == null or w.target.get("alive") != true:
+				w.cycle_target(world, 1)
+			if w.target == null:
+				_test_pilot._cruise(_strike_centre() + Vector3.UP * 400.0, 0.8)
+			if w.target:
+				var tp: Vector3 = w.target.global_position
+				var aim := Vector3(tp.x, world.ground_height(tp) + 350.0, tp.z)
+				_test_pilot._cruise(aim, 0.8)
+				var impact := Bomb.predict_impact(player.global_transform * Vector3(0, -1.5, 0), fm.velocity, world)
+				var flat := Vector2(impact.x - tp.x, impact.z - tp.z).length()
+				if flat < 35.0:
+					for i in 3:
+						w.fire(delta, world, true)
+						w._cooldown = 0.0
+					_shot("release")
+					_attack_phase = 2
+		2:  # egress
+			_test_pilot._cruise(player.global_position + Vector3(0, 400, 3000), 1.0)
+	if _test_t > 12.0 and not _test_shots.has("cam"):
+		_test_shots["cam"] = true
+		cam.view = CameraRig.View.COCKPIT_FRONT
+	if _attack_phase == 2 and not _test_shots.has("aftermath") and world.bombs.is_empty():
+		_test_shots["aftermath"] = true
+		var wt: Node3D = null
+		for u in world.ground_units:
+			if u.team == 1:
+				wt = u
+				break
+		cam.orbit_node = wt
+		cam.view = CameraRig.View.ORBIT
+		get_tree().create_timer(1.0).timeout.connect(func(): _shot("aftermath"))
+		get_tree().create_timer(3.0).timeout.connect(func():
+			var left := world.ground_units.filter(func(u): return u.team == 1 and u.alive).size()
+			print("RESULT player_hp=%d enemies_left=%d" % [player.hp, left])
+			get_tree().quit())
+	if _test_t > 120.0 or not player.alive:
+		print("RESULT timeout/dead player_alive=%s" % player.alive)
+		get_tree().quit()
 
 
 ## AI vs AI: the player's jet is flown by an AIPilot against one MiG-29.

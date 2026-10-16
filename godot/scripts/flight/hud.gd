@@ -190,8 +190,10 @@ func _draw_combat(fm: FlightModel, frame: Rect2, c: Vector2, px_per_rad: float, 
 	_txt(Vector2(c.x - 100, weapon_y), wl, 16, COL, HORIZONTAL_ALIGNMENT_CENTER, 200)
 	if world and world.missiles_tracking(aircraft).size() > 0 and int(Time.get_ticks_msec() / 250) % 2 == 0:
 		_txt(Vector2(c.x - 100, frame.position.y + 52), "MISSILE", 22, WARN, HORIZONTAL_ALIGNMENT_CENTER, 200)
-	var t := w.target
-	if t == null or not t.alive:
+	if w.selected_kind() == "bomb" and world:
+		_draw_ccip(fm)
+	var t: Node3D = w.target
+	if t == null or not is_instance_valid(t) or t.get("alive") != true:
 		return
 	var dist := aircraft.global_position.distance_to(t.global_position)
 	if camera.is_position_behind(t.global_position):
@@ -199,12 +201,16 @@ func _draw_combat(fm: FlightModel, frame: Rect2, c: Vector2, px_per_rad: float, 
 		return
 	var sp := camera.unproject_position(t.global_position)
 	var r := 14.0
-	draw_rect(Rect2(sp - Vector2(r, r), Vector2(r, r) * 2), COL, false, 2)
+	if t is GroundUnit:   # ground target: diamond
+		draw_polyline(PackedVector2Array([sp + Vector2(0, -r), sp + Vector2(r, 0), sp + Vector2(0, r), sp + Vector2(-r, 0), sp + Vector2(0, -r)]), COL, 2)
+	else:
+		draw_rect(Rect2(sp - Vector2(r, r), Vector2(r, r) * 2), COL, false, 2)
 	_txt(sp + Vector2(-40, r + 16), "%.1f" % (dist / 1852.0), 13, COL, HORIZONTAL_ALIGNMENT_CENTER, 80)
 	if w.guns_mode:
 		var muzzle := float(w.gun_data.get("muzzle_velocity_ms", 1000.0))
 		var tof := dist / muzzle
-		var lead := t.global_position + (t.fm.velocity - fm.velocity) * tof + Vector3.UP * 4.9 * tof * tof
+		var tv: Vector3 = t.get("velocity_world") if t.get("velocity_world") != null else Vector3.ZERO
+		var lead := t.global_position + (tv - fm.velocity) * tof + Vector3.UP * 4.9 * tof * tof
 		if not camera.is_position_behind(lead):
 			var lp := camera.unproject_position(lead)
 			draw_arc(lp, 7, 0, TAU, 16, COL, 2)
@@ -214,6 +220,24 @@ func _draw_combat(fm: FlightModel, frame: Rect2, c: Vector2, px_per_rad: float, 
 		_txt(sp + Vector2(-40, -r * 2.2), "LOCK", 15, WARN, HORIZONTAL_ALIGNMENT_CENTER, 80)
 	elif w.lock_progress > 0.0:
 		draw_arc(sp, r * (4.0 - 2.2 * w.lock_progress / WeaponSystem.LOCK_TIME), 0, TAU, 32, COL, 1)
+
+
+## Continuously computed impact point: where a bomb released now would land, with a fall line
+## from the flight path marker.
+func _draw_ccip(fm: FlightModel) -> void:
+	var impact := Bomb.predict_impact(aircraft.global_transform * Vector3(0, -1.5, 0), fm.velocity, world)
+	if camera.is_position_behind(impact):
+		return
+	var ip := camera.unproject_position(impact)
+	draw_arc(ip, 10, 0, TAU, 24, COL, 2)
+	draw_circle(ip, 2, COL)
+	var vb := fm.basis.inverse() * fm.velocity.normalized()
+	if vb.z < -0.1:
+		var fpm := camera.unproject_position(aircraft.global_position + fm.velocity.normalized() * 1000.0)
+		draw_dashed_line(fpm, ip, COL, 1.5, 8.0)
+	var w := aircraft.weapons
+	if w.target and is_instance_valid(w.target) and w.target.global_position.distance_to(impact) < 40.0:
+		_txt(ip + Vector2(-40, -18), "RELEASE", 14, WARN, HORIZONTAL_ALIGNMENT_CENTER, 80)
 
 
 ## Compact readout for chase/orbit views, where a pilot's HUD would be misleading.

@@ -3,6 +3,7 @@ extends Control
 
 const MENU := [
 	["Missions  (original campaign missions)", "res://scenes/mission_select.tscn"],
+	["Strike practice  (armour, AAA and SAM sites)", "res://scenes/flight.tscn", {"SC_SCENARIO": "strike"}],
 	["Dogfight  (F-16 vs 2 MiG-29s)", "res://scenes/flight.tscn", {"SC_SCENARIO": "dogfight", "SC_BANDITS": "2"}],
 	["Free flight  (F-16 from the runway, San Francisco)", "res://scenes/flight.tscn", {"SC_SCENARIO": "free"}],
 	["Theatre viewer  (fly over the maps)", "res://scenes/theatre_viewer.tscn"],

@@ -36,6 +36,8 @@ func alive() -> bool:
 		return false
 	if node is Aircraft:
 		return (node as Aircraft).alive
+	if node is GroundUnit:
+		return (node as GroundUnit).alive
 	return true
 
 

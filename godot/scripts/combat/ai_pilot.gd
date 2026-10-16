@@ -54,21 +54,8 @@ func update(dt: float, world: CombatWorld) -> void:
 		fm.afterburner = 1.0 if fm.airspeed < 150.0 else 0.0
 		return
 
-	# 2. missile defence: break perpendicular to the threat, dispense decoys
-	var threats := world.missiles_tracking(me)
-	if threats.size() > 0:
-		_state = "defend"
-		var m: Missile = threats[0]
-		var to_m := m.global_position - pos
-		var away := to_m.cross(Vector3.UP).normalized()
-		if away.dot(vel) < 0.0:
-			away = -away
-		_fly_toward(pos + away * 1500.0 + Vector3.DOWN * 150.0, 1.0)
-		fm.throttle = 1.0
-		fm.afterburner = 1.0
-		if _decoy_timer <= 0.0 and to_m.length() < 3000.0:
-			me.weapons.drop_decoy(world, m.infrared)
-			_decoy_timer = randf_range(0.8, 1.4)
+	# 2. missile defence
+	if defend(world):
 		return
 
 	# 3. mission objective
@@ -83,6 +70,36 @@ func update(dt: float, world: CombatWorld) -> void:
 	else:
 		_state = "patrol"
 		_cruise(pos + Vector3(vel.x, 0, vel.z).normalized() * 3000.0 + Vector3.UP * (1500.0 - agl) * 0.3)
+
+
+## Missile defence: break perpendicular to the threat and dispense decoys. True if defending.
+func defend(world: CombatWorld) -> bool:
+	var fm := me.fm
+	var pos := me.global_position
+	var m: Missile = null
+	var md := 5000.0
+	for t in world.missiles_tracking(me):
+		var d: float = t.global_position.distance_to(pos)
+		var closing: bool = (t.velocity - fm.velocity).dot(pos - t.global_position) > 0.0
+		if d < md and closing:
+			md = d
+			m = t
+	if m == null:
+		return false   # only break once a missile is actually close
+	_state = "defend"
+	var to_m := m.global_position - pos
+	var away := to_m.cross(Vector3.UP).normalized()
+	if away.dot(fm.velocity) < 0.0:
+		away = -away
+	var agl := pos.y - world.ground_height(pos)
+	var vertical := Vector3.DOWN * 150.0 if agl > 600.0 else Vector3.UP * 200.0
+	_fly_toward(pos + away * 1500.0 + vertical, 1.0)
+	fm.throttle = 1.0
+	fm.afterburner = 1.0
+	if _decoy_timer <= 0.0 and md < 3000.0:
+		me.weapons.drop_decoy(world, m.infrared)
+		_decoy_timer = randf_range(0.6, 1.1)
+	return true
 
 
 ## Returns true when the objective fully controlled the aircraft this tick.
@@ -268,8 +285,7 @@ func _attack(dt: float, world: CombatWorld) -> void:
 	fm.afterburner = 1.0 if fm.airspeed < 220.0 or dist > 8000.0 else 0.0
 	w.target = target
 	var off_nose := (-me.global_basis.z).angle_to(tpos - pos)
-	if _missile_timer <= 0.0 and not w.stations.is_empty():
-		w.guns_mode = false
+	if _missile_timer <= 0.0 and w.select_kind("aa"):
 		var d: Dictionary = w.selected_data()
 		var max_r := float(d.get("range_ft", 17700)) * FT
 		if dist < max_r * 0.75 and dist > 900.0 and off_nose < deg_to_rad(12.0) and w.locked():
@@ -281,7 +297,7 @@ func _attack(dt: float, world: CombatWorld) -> void:
 	else:
 		if w.guns_mode:
 			w.fire(dt, world, false)
-		w.guns_mode = w.stations.is_empty()
+		w.guns_mode = not w.select_kind("aa")
 
 
 func _pick_target(world: CombatWorld, radius := INF) -> Aircraft:

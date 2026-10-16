@@ -4,6 +4,7 @@ extends Node3D
 ## Stepped from the flight scene's fixed physics loop.
 
 signal aircraft_destroyed(a: Aircraft)
+signal ground_destroyed(u: GroundUnit)
 
 const FT := 0.3048
 const BULLET_LIFE := 2.5
@@ -12,6 +13,8 @@ var terrain: Terrain
 var aircraft: Array[Aircraft] = []
 var missiles: Array[Missile] = []
 var decoys: Array[Decoy] = []
+var ground_units: Array[GroundUnit] = []
+var bombs: Array[Bomb] = []
 var _wrecks: Array = []          # [{node, vel, spin}]
 # gun rounds, structure-of-arrays
 var _b_pos := PackedVector3Array()
@@ -43,6 +46,12 @@ func add_aircraft(a: Aircraft) -> void:
 		add_child(a)
 
 
+func add_ground_unit(u: GroundUnit) -> void:
+	ground_units.append(u)
+	if u.get_parent() == null:
+		add_child(u)
+
+
 func ground_height(p: Vector3) -> float:
 	return maxf(terrain.height_at(p.x, p.z), 0.0) if terrain else 0.0
 
@@ -56,8 +65,12 @@ func step(dt: float) -> void:
 		a.weapons.update(dt, self)
 		if a.fm.crashed:
 			destroy(a, "crashed")
+	for u in ground_units:
+		if u.alive and u.team >= 0 and not u.weapon.is_empty():
+			u.update(dt, self)
 	_step_bullets(dt)
 	_step_missiles(dt)
+	_step_bombs(dt)
 	_step_decoys(dt)
 	_step_wrecks(dt)
 
@@ -75,19 +88,33 @@ func fire_bullet(from: Aircraft, gun: Dictionary) -> void:
 	_b_damage.append(float(gun.get("damage", 3)))
 
 
+## A single round from any shooter (AAA sites use this).
+func fire_round(from: Node3D, pos: Vector3, vel: Vector3, dmg: float) -> void:
+	_b_pos.append(pos)
+	_b_vel.append(vel)
+	_b_life.append(BULLET_LIFE * 2.0)
+	_b_owner.append(from)
+	_b_damage.append(dmg)
+
+
 func _step_bullets(dt: float) -> void:
 	var i := 0
 	while i < _b_pos.size():
 		var p := _b_pos[i]
 		var v := _b_vel[i] + Vector3.DOWN * 9.8 * dt
 		var q := p + v * dt
-		var hit: Aircraft = null
+		var hit: Node3D = null
 		for a in aircraft:
 			if a == _b_owner[i] or not a.alive:
 				continue
 			if _segment_sphere(p, q, a.global_position, a.hit_radius):
 				hit = a
 				break
+		if hit == null and _b_owner[i] is Aircraft and q.y < ground_height(q) + 80.0:
+			for u in ground_units:
+				if u.alive and _segment_sphere(p, q, u.global_position + Vector3.UP * u.hit_radius * 0.4, u.hit_radius * 0.6):
+					hit = u
+					break
 		_b_life[i] -= dt
 		if hit or _b_life[i] <= 0.0 or q.y < ground_height(q):
 			if hit:
@@ -122,15 +149,60 @@ func _process(_d: float) -> void:
 
 
 # ---------------------------------------------------------------- missiles & decoys
-func fire_missile(from: Aircraft, weapon: Dictionary, target: Aircraft) -> void:
+func fire_missile(from: Aircraft, weapon: Dictionary, target: Node3D) -> void:
 	var m := Missile.new()
 	add_child(m)
 	m.setup(weapon, from, target)
 	var b := from.global_basis
 	m.launch(from.global_transform * Vector3(0, -1.2, -1.0), b, from.fm.velocity + (-b.z) * 15.0)
 	missiles.append(m)
-	if target:
+	if target is Aircraft:
 		target.missile_warning(m)
+
+
+## Surface-to-air launch from a SAM site or ship.
+func fire_missile_from(site: GroundUnit, weapon: Dictionary, target: Aircraft) -> void:
+	var m := Missile.new()
+	add_child(m)
+	m.setup(weapon, site, target)
+	var up := (target.global_position - site.global_position).normalized().lerp(Vector3.UP, 0.6).normalized()
+	m.launch(site.global_position + Vector3.UP * 6.0, Basis.looking_at(up, Vector3.FORWARD if absf(up.y) > 0.99 else Vector3.UP), up * 60.0)
+	missiles.append(m)
+	target.missile_warning(m)
+
+
+func drop_bomb(from: Aircraft, weapon: Dictionary, target: Node3D) -> void:
+	var b := Bomb.new()
+	add_child(b)
+	b.setup(weapon, from, target)
+	b.global_transform = Transform3D(from.global_basis, from.global_transform * Vector3(0, -1.5, 0))
+	b.velocity = from.fm.velocity + from.global_basis * Vector3(0, -3.0, 0)
+	bombs.append(b)
+
+
+func _step_bombs(dt: float) -> void:
+	for b in bombs.duplicate():
+		if b.step(dt, self):
+			bombs.erase(b)
+			var r := float(b.data.get("blast_radius_ft", 75)) * FT
+			var p := Vector3(b.global_position.x, ground_height(b.global_position), b.global_position.z)
+			Effects.explosion(self, String(b.data.get("explosion", "GRNDEX4")), p + Vector3.UP * r * 0.5, clampf(r * 2.5, 25.0, 140.0))
+			_blast(p, r, float(b.data.get("damage", 350)), b.shooter)
+			b.queue_free()
+
+
+## Area damage: full inside the radius, falling off to zero at twice the radius.
+func _blast(p: Vector3, radius: float, amount: float, by: Node3D) -> void:
+	for u in ground_units:
+		if u.alive:
+			var d := maxf(u.global_position.distance_to(p) - u.hit_radius, 0.0)
+			if d < radius * 2.0:
+				damage(u, amount * clampf(2.0 - d / radius, 0.0, 1.0), by)
+	for a in aircraft:
+		if a.alive and a != by:
+			var d := a.global_position.distance_to(p)
+			if d < radius * 2.0:
+				damage(a, amount * 0.3 * clampf(2.0 - d / radius, 0.0, 1.0), by)
 
 
 func _step_missiles(dt: float) -> void:
@@ -158,6 +230,9 @@ func _retire_missile(m: Missile) -> void:
 
 func _detonate(m: Missile) -> void:
 	Effects.explosion(self, String(m.data.get("explosion", "EXPLODE2")), m.global_position, 30.0)
+	if m.target is GroundUnit or m.global_position.y < ground_height(m.global_position) + 30.0:
+		_blast(m.global_position, m.blast_radius, m.damage, m.shooter)
+		return
 	for a in aircraft:
 		if not a.alive or a == m.shooter:
 			continue
@@ -186,11 +261,21 @@ func missiles_tracking(a: Aircraft) -> Array:
 
 
 # ---------------------------------------------------------------- damage
-func damage(a: Aircraft, amount: float, by: Aircraft) -> void:
+func damage(target: Node3D, amount: float, by: Node3D) -> void:
+	if target is GroundUnit:
+		var u := target as GroundUnit
+		if not u.alive:
+			return
+		u.hp -= amount
+		if u.hp <= 0.0:
+			u.on_destroyed(self)
+			ground_destroyed.emit(u)
+		return
+	var a := target as Aircraft
 	if not a.alive:
 		return
 	a.hp -= amount
-	a.on_damaged(by)
+	a.on_damaged(by as Aircraft)
 	if a.hp <= 0.0:
 		destroy(a, "shot down")
 

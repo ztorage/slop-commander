@@ -14,7 +14,7 @@ import iff, shape, realspace as rs
 from upscale import upscale_rgba
 from cockpit import to_rgba
 
-KINDS = (b'MISS', b'TRCR', b'BOMB', b'DECY')
+KINDS = (b'MISS', b'TRCR', b'BOMB', b'DECY', b'DURD')
 
 
 def fx(b, o):

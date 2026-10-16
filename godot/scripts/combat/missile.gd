@@ -12,7 +12,7 @@ const FT := 0.3048
 const DECOY_CHANCE := 0.12        # per flare/chaff the seeker sees
 
 var data := {}
-var shooter: Aircraft
+var shooter: Node3D
 var target: Node3D          # Aircraft or decoy
 var velocity := Vector3.ZERO
 var speed := 0.0
@@ -30,7 +30,7 @@ var closest := INF
 var _prev_dist := INF
 
 
-func setup(weapon: Dictionary, from: Aircraft, tgt: Node3D) -> void:
+func setup(weapon: Dictionary, from: Node3D, tgt: Node3D) -> void:
 	data = weapon
 	shooter = from
 	target = tgt
@@ -106,6 +106,9 @@ func step(dt: float, world: CombatWorld) -> bool:
 	if speed > 1.0:
 		look_at(global_position + velocity, Vector3.UP if absf(velocity.normalized().y) < 0.99 else Vector3.FORWARD)
 	if global_position.y < world.ground_height(global_position):
+		if is_instance_valid(target) and target is GroundUnit and global_position.distance_to(target.global_position) < blast_radius * 3.0:
+			end_reason = "impact on target"
+			return true
 		alive = false
 		end_reason = "hit ground"
 		world.ground_explosion(global_position, "GRNDEX1")
@@ -115,4 +118,6 @@ func step(dt: float, world: CombatWorld) -> bool:
 func _target_alive() -> bool:
 	if target is Aircraft:
 		return (target as Aircraft).alive
+	if target is GroundUnit:
+		return (target as GroundUnit).alive
 	return true

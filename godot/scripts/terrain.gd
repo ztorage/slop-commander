@@ -17,6 +17,9 @@ var color_image: Image           # grid colours (for the nav map)
 var _palette: Image
 
 
+var world: CombatWorld          # when set, theatre objects become destructible GroundUnits
+
+
 func load_theatre(theatre_name: String, with_objects := true) -> bool:
 	theatre = theatre_name
 	var dir := GameData.path("terrain".path_join(theatre_name))
@@ -175,7 +178,7 @@ func _place_objects(json_path: String) -> void:
 	root.name = "Objects"
 	add_child(root)
 	for o in objs:
-		var inst := GameData.load_model(o.model)
+		var inst: Node3D = GroundUnit.create(String(o.model), -1) if world else GameData.load_model(o.model)
 		if inst == null:
 			continue
 		var p: Array = o.pos_ft
@@ -189,3 +192,5 @@ func _place_objects(json_path: String) -> void:
 		for lod in inst.find_children("LOD*", "", true, false):
 			lod.visible = lod.name == "LOD0"
 		root.add_child(inst)
+		if world and inst is GroundUnit:
+			world.ground_units.append(inst)

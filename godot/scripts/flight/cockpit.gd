@@ -148,7 +148,7 @@ func _draw_mfds() -> void:
 		draw_rect(r, Color(0.02, 0.12, 0.04))
 		_fit(modes.aard[3], r.grow(-r.size.x * 0.04))  # radar range/azimuth grid
 		_draw_radar_contacts(r)
-		_mfd_text(r, ["RDR  20", "", "", "", "", "HDG %03d" % _heading()])
+		_mfd_text(r, ["GND  10" if aircraft.weapons.air_to_ground() else "RDR  20", "", "", "", "", "HDG %03d" % _heading()])
 	if screens.has("R"):
 		var r := rect_to_screen(screens.R)
 		draw_rect(r, Color(0.02, 0.12, 0.04))
@@ -182,13 +182,18 @@ func _draw_radar_contacts(r: Rect2) -> void:
 	var origin := Vector2(r.get_center().x, r.end.y - r.size.y * 0.08)
 	var scale := (r.size.y * 0.85) / WeaponSystem.RADAR_RANGE
 	var inv := aircraft.global_transform.affine_inverse()
-	for a in w.radar_contacts(world):
+	if w.air_to_ground():
+		scale = (r.size.y * 0.85) / WeaponSystem.GROUND_RANGE
+	for a in w.contacts(world):
 		var l: Vector3 = inv * a.global_position          # x right, -z ahead
 		var p := origin + Vector2(l.x, l.z) * scale
 		if not r.has_point(p):
 			continue
 		var col := Color(1, 1, 0.4) if a == w.target else MFD_GREEN
-		draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), col, a == w.target, 1.5)
+		if a is GroundUnit:
+			draw_polyline(PackedVector2Array([p + Vector2(0, -4), p + Vector2(4, 0), p + Vector2(0, 4), p + Vector2(-4, 0), p + Vector2(0, -4)]), col, 1.5)
+		else:
+			draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), col, a == w.target, 1.5)
 	for m in world.missiles:
 		var l: Vector3 = inv * m.global_position
 		var p := origin + Vector2(l.x, l.z) * scale
@@ -212,6 +217,12 @@ func _draw_threats() -> void:
 			var l: Vector3 = inv * a.global_position
 			var dir := Vector2(l.x, l.z).normalized()
 			draw_circle(centre + dir * radius, art_scale() * 1.3, Color(1, 0.85, 0.3))
+		for u in world.ground_units:   # SAM / AAA sites that have us inside their envelope
+			if u.alive and u.team >= 0 and u.team != aircraft.team and not u.weapon.is_empty():
+				if u.global_position.distance_to(aircraft.global_position) < float(u.weapon.get("range_ft", 0)) * 0.3048:
+					var l: Vector3 = inv * u.global_position
+					var dir := Vector2(l.x, l.z).normalized()
+					draw_rect(Rect2(centre + dir * radius - Vector2(1.5, 1.5) * art_scale(), Vector2(3, 3) * art_scale()), Color(1, 0.5, 0.2))
 		for m in world.missiles_tracking(aircraft):
 			var l: Vector3 = inv * m.global_position
 			var dir := Vector2(l.x, l.z).normalized()

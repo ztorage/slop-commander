@@ -107,6 +107,16 @@ vehicles, `SWPN` SAM/AAA sites & ships, `ORNT` scenery, `DEBR` debris, `EXPL` ex
   `GUNSPARK`, ground explosions `GRNDEX*`, `FLARE`, `CHAFF`).
 - Cockpit `EJEC` frames are overlays for the front view (ejection handle pull, MFDs dropping out).
 
+## Ground units ✅ (`tools/ground.py`)
+`OBJT` sub-forms `GRND` (vehicles), `SWPN` (SAM/AAA sites, ships), `ORNT` (buildings), `XMIT`:
+`DAMG` u16 hit points (T-72 50, ZSU-23 40, SA-2 site 30, SA-6 launcher 20, destroyer 300,
+hangar 100); `DEST` destroyed-state models (14-byte records, `SMOKEGEN` = smoke column);
+`EXPL` explosion; `DEBR` debris; `TRGT`, `SIGN`, `ALGN`.
+`SWPN/DATA` (33): `u32 ammo, u32 rangeFt, u32 minRangeFt, u8 rate, …, char weapon[8] @21`
+(ZSU-23: 2500 × 23MM to 10 000 ft; SA-2 site: 4 × SA2 to 20 000 ft; SA-6: 12 × SA6 to 60 000 ft).
+Bombs (`BOMB`, `DURD`): `WDAT` damage (Mk 82 350, GBU-15 2000), `EXPL` blast radius (75 / 200 ft),
+`guidance[2] == 3` = guided.
+
 ## Missions ✅ (`MISSIONS/MISN-*.IFF`, `tools/missions.py`, runtime `godot/scripts/mission/`)
 `FORM MISN`: `VERS`, `INFO`/`NAME` (theatre title), `TUNE`, `FORM WRLD/FILE` (world descriptor),
 `AREA`, `SPOT`, `NUMS`, `MSGS` (NUL-separated nav-point labels), `FLAG` (initial flags, every

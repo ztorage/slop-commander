@@ -259,6 +259,25 @@ entries). The intro is two overlay functions: image offset 0x671A0 (shots 1-8) w
   DS 0x22AA/0x23B0/0x259E onwards. The intro ends with MMUSIC track 23 (title), a 2 s hold and
   the picture opening out from the band to the full screen (25 steps).
 
+## Front end 🟡 (`tools/frontend.py`, runtime `godot/scripts/ui/front_end.gd`)
+- CD game chooser (MENU.EXE, DS paragraph 0x22CA): OPTSHPS 0x2c hills over black, `TOMENU.PAK`
+  0 panel at (45, 24), 1 buttons (frames 0/1 up, 2/3 pressed) at panel + (44, 9) / (45, 47),
+  166 x 26, 2 = full palette; OPTPALS 0x15 + 0x18 + MID1 0x3b first. No input for 2 minutes ends it.
+- Main menu (OPTTEST.EXE overlay 0xC6 at image 0x57A50, entry 0xB87): sky OPTSHPS 0x74, clouds
+  MIDGAMES 0x14, hills OPTSHPS 0x2c; `MAINMENU.PAK` 1 = panel at (45, 24) with engraved
+  (disabled) labels, 0 = buttons (frame i up, 5 + i pressed) at panel + (11, 10 + 17 i), 210 x 14,
+  2 = palette patch. Buttons return 1 continue (only if `gensave` exists), 2 load (only if `*.sav`
+  exist; opens the SAVELOAD dialog), 0 new game, 3 training mission, 4 view objects. The title
+  music is MMUSIC 23; with music on the menu returns to the intro when the track ends, without
+  music after 30 s.
+- Widgets: a button draws frame `[+0x28]` (or `[+0x2e]` while pressed: flags `[+0x10]` bit 5) of
+  shape `[+0x1e]` at its absolute position, and on release stores `[+0x2c]` at `*[+0x2a]`.
+- Pilot licence (same overlay, entry 0): OPTSHPS 0xa0 under OPTPALS 0x1e, music MMUSIC 26,
+  FORMFONT fields last name (91, 97), first name (174, 97), callsign (124, 103): letters and
+  space, at most 15 characters and 57 / 50 / 98 pixels, Enter/Tab to the next, "_" marks the
+  active field. Glyph pixels are palette indices (colour 2).
+- `MOUSE.SHP`: crosshair (11 x 11, hotspot 5, 5) and arrow, each with a highlighted copy.
+
 ## Not yet examined ⬜
 Fonts (other than the cutscene font), flight model constants.
 

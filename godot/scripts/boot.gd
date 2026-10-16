@@ -2,6 +2,7 @@ extends Control
 ## Entry point: refuses to continue unless game data extracted from a real CD is present.
 
 const MENU := [
+	["Original menus (front end)", "res://scenes/front_end.tscn", {"front": "main", "leave_dev": true}],
 	["Campaign  (story - new game, work in progress)", "res://scenes/campaign.tscn", {"campaign": "new"}],
 	["Continue campaign", "res://scenes/campaign.tscn", {"campaign": "continue"}],
 	["Intro movie", "res://scenes/intro.tscn"],
@@ -17,11 +18,18 @@ const MENU := [
 
 func _ready() -> void:
 	if GameData.is_ready():
-		# the CD intro plays once per launch (skippable), like the original
-		if not GameData.has_meta("intro_seen") and OS.get_environment("SC_SKIP_INTRO") == "" \
+		var dev: bool = GameData.get_meta("dev_menu", false) or OS.get_environment("SC_DEV_MENU") != ""
+		var front := FileAccess.file_exists(GameData.path("frontend/frontend.json"))
+		# the CD intro plays once per launch (skippable), then the game chooser, like the original
+		if not dev and not GameData.has_meta("intro_seen") and OS.get_environment("SC_SKIP_INTRO") == "" \
 				and FileAccess.file_exists(GameData.path("cinematics/intro/intro.json")):
 			GameData.set_meta("intro_seen", true)
+			GameData.launch = {"front": "chooser"}
 			get_tree().change_scene_to_file.call_deferred("res://scenes/intro.tscn")
+			return
+		if not dev and front:
+			GameData.launch = {"front": "main"}
+			get_tree().change_scene_to_file.call_deferred("res://scenes/front_end.tscn")
 			return
 		if GameData.get_meta("music_playing", false):     # the intro's title music carries on
 			GameData.remove_meta("music_playing")
@@ -71,9 +79,12 @@ func _show_menu() -> void:
 		b.add_theme_font_size_override("font_size", 20)
 		b.pressed.connect(func():
 			GameData.launch = item[2] if item.size() > 2 else {}
+			if GameData.launch.get("leave_dev", false):
+				GameData.remove_meta("dev_menu")
 			get_tree().change_scene_to_file(item[1]))
 		box.add_child(b)
 	box.get_child(2).grab_focus.call_deferred()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	box.position -= box.get_combined_minimum_size() * 0.5
 
 

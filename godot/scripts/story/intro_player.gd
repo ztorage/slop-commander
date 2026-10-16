@@ -103,9 +103,9 @@ func _finish() -> void:
 	if OS.get_environment("SC_INTRO_TEST") != "":
 		get_tree().quit()
 		return
-	# the game's own intro (in-engine cutscene) follows the CD movie, as in the original
-	if FileAccess.file_exists(GameData.path("cinematics/mid1/scenes.json")):
-		GameData.launch = {"midgame": "mid1", "after": _next_scene}
-		get_tree().change_scene_to_file("res://scenes/midgame.tscn")
+	# then the CD's game chooser (MENU.EXE), which leads to the game's own intro
+	if FileAccess.file_exists(GameData.path("frontend/frontend.json")):
+		GameData.launch = {"front": "chooser"}
+		get_tree().change_scene_to_file("res://scenes/front_end.tscn")
 		return
 	get_tree().change_scene_to_file(_next_scene)

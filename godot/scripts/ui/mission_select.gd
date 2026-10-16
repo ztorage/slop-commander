@@ -23,19 +23,24 @@ func _ready() -> void:
 	files = files.filter(func(f): return f.begins_with("MISN-") or f.begins_with("TO_MISN"))
 	files.sort_custom(_mission_order)
 	for f in files:
-		var m: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(GameData.path("missions/" + f)))
-		var name := f.get_basename()
+		var m: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(GameData.path("missions/" + String(f))))
+		var mission_name: String = String(f).get_basename()
 		var objectives: Array = m.messages.map(func(x): return String(x).replace("\n", " "))
 		var b := Button.new()
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.text = "%-10s  %-14s  %s" % [name.trim_prefix("TO_"), String(m.title), " • ".join(objectives.slice(0, 4))]
+		b.text = "%-10s  %-14s  %s" % [mission_name.trim_prefix("TO_"), String(m.title), " • ".join(objectives.slice(0, 4))]
 		b.add_theme_font_size_override("font_size", 16)
 		b.pressed.connect(func():
-			GameData.launch = {"SC_SCENARIO": "mission", "SC_MISSION": name}
+			GameData.launch = {"SC_SCENARIO": "mission", "SC_MISSION": mission_name}
 			get_tree().change_scene_to_file("res://scenes/flight.tscn"))
 		box.add_child(b)
 	if box.get_child_count() > 0:
 		box.get_child(0).grab_focus.call_deferred()
+	if OS.get_environment("SC_SELECT_TEST") != "":   # automated check: screenshot, then launch the first mission
+		await get_tree().create_timer(1.0).timeout
+		var out := ProjectSettings.globalize_path("res://").path_join("../shots/mission_select.png")
+		get_viewport().get_texture().get_image().save_png(out)
+		(box.get_child(0) as Button).pressed.emit()
 
 
 func _mission_order(a: String, b: String) -> bool:

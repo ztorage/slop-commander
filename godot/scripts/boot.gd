@@ -13,6 +13,7 @@ const MENU := [
 
 func _ready() -> void:
 	if GameData.is_ready():
+		Audio.music(Audio.MENU_TRACK[0], Audio.MENU_TRACK[1])
 		_show_menu()
 		return
 	var bg := ColorRect.new()

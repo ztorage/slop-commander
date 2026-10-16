@@ -156,6 +156,23 @@ Coordinates are signed 24-bit feet stored in 4-byte slots.
 - `OBJECTS/*LOAD*.IFF` `FORM WEAP`: `WPNS` (`u16 count, char weapon[8]`…), `DCOY` chaff, flares.
 - `MISSIONS/<world>.IFF` `FORM WRLD`: `TERA` theatre PAK, `PALT`, `SKYS`, `LGHT`, `CAMR` cameras.
 
+## Sound & music ✅ (`tools/audio.py`, runtime `godot/scripts/audio.gd`)
+- Speech: `LILTRE INTEL/SPEECH.PAK` = PAK (index = profile `SPCH` voice id) of PAKs (index = radio
+  message number) of Creative Voice files; entries are `0x20` LZW-compressed. 283 clips.
+- Digital effects: `SOUND/DSOUNDFX.PAK` = PAK of PAKs of VOC clips: 0 Mk 82 drop, 1 Mk 20 drop,
+  2–5 explosions, 6 AIM-9, 7 AIM-120, 8 rocket pod, 9 Maverick, 10–15 gun impacts, 16–18 fly-bys,
+  19/20 gear up/down, 21 touchdown, 23 engine (military), 24 afterburner, 25–30 engine start /
+  shutdown / transitions.
+- VOC: `"Creative Voice File\x1a"`, header size at +20; blocks `u8 type, u24 size`: 1 = sound
+  (`u8 timeConstant` → rate = 1e6 / (256 − tc), `u8 codec`), 2 continuation, 3 silence, 9 extended.
+- Music: `SOUND/COMBAT.*`, `GAMEFLOW.*` (`.MID` General MIDI, `.ROL` MT-32, `.ADL` AdLib) and
+  `MIDGAMES/{A,R,M}MUSIC.PAK`: PAKs whose first entry is an archive of transition tracks followed by
+  XMIDI songs (`FORM XDIR` / `CAT XMID` / `EVNT`, 120 Hz ticks, note-ons carry durations).
+  `COMBAT.DAT` holds the transition matrix (not used yet). In flight: mission `TUNE` (0–3), 4 combat,
+  11 crash / ejection, 12 mission over.
+- `VOCLIST.IFF`: `LIST` of 20-byte VOC file names (`f:3mi061.voc`) for the cutscene speech in
+  `VOCLIST.TRE`.
+
 ## Not yet examined ⬜
 Missions (`MISN-*.IFF`), fonts, gameflow/conversations, FLIC cutscenes (`*.FLX`), XMIDI music,
 VOC speech, flight model constants.

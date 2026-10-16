@@ -110,6 +110,7 @@ func on_destroyed(world: CombatWorld) -> void:
 	var expl: Dictionary = data.get("explosion") if data.get("explosion") != null else {}
 	Effects.explosion(world, String(expl.get("sprite", "GRNDEX2")), global_position + Vector3.UP * 6.0,
 		clampf(float(expl.get("radius_ft", 40)) * FT * 2.5, 20.0, 90.0))
+	Audio.sfx("explosion_3", global_position, world, 8.0)
 	var wreck_shown := false
 	for w in data.get("destroyed", []):
 		if String(w) == "SMOKEGEN":

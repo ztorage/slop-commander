@@ -85,6 +85,8 @@ func setup(mission: Dictionary, combat: CombatWorld, ter: Terrain, player_aircra
 				if a and not a.is_player:
 					_spawn(a, s)
 	_build_nav()
+	world.aircraft_destroyed.connect(_on_aircraft_destroyed)
+	world.aircraft_damaged.connect(_on_aircraft_damaged)
 	for a in actors:
 		_run(a, int(a.part.prog_init))
 
@@ -433,11 +435,35 @@ func _message(actor: MissionActor, arg: int) -> void:
 	var text := String(actor.profile.get("messages", {}).get(str(arg), ""))
 	if text != "":
 		radio.emit(actor.callsign(), text)
+		if actor.profile.has("voice"):
+			Audio.speech(int(actor.profile.voice), arg)
 	if actor.name == "STRIBASE":
 		if arg == 20:
 			won = true
 		elif arg == 21 or arg == 22:
 			lost = true
+
+
+# ---------------------------------------------------------------- combat chatter
+## Event-driven radio lines from pilot profiles (message numbers shared by all profiles:
+## 2 "Outstanding", 7 "I'm hit", 9 "Ejecting / Going down").
+var _hit_reported := {}
+
+
+func _on_aircraft_damaged(a: Aircraft, _by: Node3D) -> void:
+	var who := actor_for(a)
+	if who and not who.is_player and a.alive and a.hp < a.max_hp * 0.6 and not _hit_reported.has(who):
+		_hit_reported[who] = true
+		_message(who, 7)
+
+
+func _on_aircraft_destroyed(a: Aircraft) -> void:
+	var who := actor_for(a)
+	if who and not who.is_player:
+		_message(who, 9)
+	var killer := actor_for(a.last_attacker) if a.last_attacker else null
+	if killer and not killer.is_player and killer.friendly and who and not who.friendly:
+		_message(killer, 2)
 
 
 # ---------------------------------------------------------------- objectives

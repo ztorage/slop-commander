@@ -19,6 +19,7 @@ anti_aliasing/quality/msaa_3d=2
 
 GameData="*res://scripts/game_data.gd"
 Controls="*res://scripts/controls.gd"
+Audio="*res://scripts/audio.gd"
 
 [physics]
 

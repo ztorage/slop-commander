@@ -97,6 +97,9 @@ func _ready() -> void:
 	nav_map = NavMap.new()
 	nav_map.visible = false
 	ui.add_child(nav_map)
+	var fa := FlightAudio.new()
+	add_child(fa)
+	cam.doppler_tracking = Camera3D.DOPPLER_TRACKING_PHYSICS_STEP
 	if scenario == "mission":
 		mission = MissionRunner.new()
 		add_child(mission)
@@ -108,9 +111,11 @@ func _ready() -> void:
 		mission.mission_over.connect(_on_mission_over)
 		hud.mission = mission
 		nav_map.setup(terrain, mission, player)
+		fa.setup(player, world, mission)
 		hud.message = String(mission_data.title).to_upper() + "   —   N: navigation map"
 		get_tree().create_timer(6.0).timeout.connect(func(): if hud.message.ends_with("map"): hud.message = "")
 		return
+	fa.setup(player, world, null)
 	start()
 
 

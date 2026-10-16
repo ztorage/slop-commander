@@ -21,3 +21,6 @@ __pycache__/
 /godot/.godot/
 /godot/export_presets.cfg
 /build/
+
+# Third-party SoundFont used to render the original MIDI scores locally
+/soundfonts/

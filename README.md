@@ -15,6 +15,12 @@ python3 -m venv .venv && .venv/bin/pip install -r tools/requirements.txt
 godot --path godot
 ```
 
+Music is rendered from the original General MIDI scores with [FluidSynth](https://www.fluidsynth.org)
+(`brew install fluid-synth`) and a General MIDI SoundFont: put one at `soundfonts/default.sf2` (for
+example [GeneralUser GS](https://www.schristiancollins.com/generaluser)) or set `SC_SOUNDFONT`. Without
+it the game runs without music. Engine sound is muffled to 50% by default (`ENGINE_LEVEL` in
+`godot/scripts/audio.gd`).
+
 `extract.py` writes:
 
 | Folder        | Contents                                         | In git? |

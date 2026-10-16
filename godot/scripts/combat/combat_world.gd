@@ -5,6 +5,7 @@ extends Node3D
 
 signal aircraft_destroyed(a: Aircraft)
 signal ground_destroyed(u: GroundUnit)
+signal aircraft_damaged(a: Aircraft, by: Node3D)
 
 const FT := 0.3048
 const BULLET_LIFE := 2.5
@@ -119,6 +120,8 @@ func _step_bullets(dt: float) -> void:
 		if hit or _b_life[i] <= 0.0 or q.y < ground_height(q):
 			if hit:
 				Effects.explosion(self, "GUNSPARK", q, 6.0)
+				if randf() < 0.3:
+					Audio.sfx("gun_impact_%d" % randi_range(1, 6), q, self, -4.0)
 				damage(hit, _b_damage[i], _b_owner[i])
 			_b_pos.remove_at(i); _b_vel.remove_at(i); _b_life.remove_at(i)
 			_b_owner.remove_at(i); _b_damage.remove_at(i)
@@ -156,6 +159,8 @@ func fire_missile(from: Aircraft, weapon: Dictionary, target: Node3D) -> void:
 	var b := from.global_basis
 	m.launch(from.global_transform * Vector3(0, -1.2, -1.0), b, from.fm.velocity + (-b.z) * 15.0)
 	missiles.append(m)
+	var launch_sfx := "maverick_shoot" if String(weapon.name).begins_with("AGM") else ("aim120_shoot" if String(weapon.name) == "AMRAAM" else "aim9_shoot")
+	Audio.sfx(launch_sfx, from.global_position, self, 2.0)
 	if target is Aircraft:
 		target.missile_warning(m)
 
@@ -168,6 +173,7 @@ func fire_missile_from(site: GroundUnit, weapon: Dictionary, target: Aircraft) -
 	var up := (target.global_position - site.global_position).normalized().lerp(Vector3.UP, 0.6).normalized()
 	m.launch(site.global_position + Vector3.UP * 6.0, Basis.looking_at(up, Vector3.FORWARD if absf(up.y) > 0.99 else Vector3.UP), up * 60.0)
 	missiles.append(m)
+	Audio.sfx("aim120_shoot", site.global_position, self, 6.0, 0.8)
 	target.missile_warning(m)
 
 
@@ -178,6 +184,7 @@ func drop_bomb(from: Aircraft, weapon: Dictionary, target: Node3D) -> void:
 	b.global_transform = Transform3D(from.global_basis, from.global_transform * Vector3(0, -1.5, 0))
 	b.velocity = from.fm.velocity + from.global_basis * Vector3(0, -3.0, 0)
 	bombs.append(b)
+	Audio.sfx("mk20_drop" if String(weapon.name) == "MK20" else "mk82_drop", from.global_position, self)
 
 
 func _step_bombs(dt: float) -> void:
@@ -187,6 +194,7 @@ func _step_bombs(dt: float) -> void:
 			var r := float(b.data.get("blast_radius_ft", 75)) * FT
 			var p := Vector3(b.global_position.x, ground_height(b.global_position), b.global_position.z)
 			Effects.explosion(self, String(b.data.get("explosion", "GRNDEX4")), p + Vector3.UP * r * 0.5, clampf(r * 2.5, 25.0, 140.0))
+			Audio.sfx("explosion_3", p, self, 8.0)
 			_blast(p, r, float(b.data.get("damage", 350)), b.shooter)
 			b.queue_free()
 
@@ -230,6 +238,7 @@ func _retire_missile(m: Missile) -> void:
 
 func _detonate(m: Missile) -> void:
 	Effects.explosion(self, String(m.data.get("explosion", "EXPLODE2")), m.global_position, 30.0)
+	Audio.sfx("explosion_2", m.global_position, self, 6.0)
 	if m.target is GroundUnit or m.global_position.y < ground_height(m.global_position) + 30.0:
 		_blast(m.global_position, m.blast_radius, m.damage, m.shooter)
 		return
@@ -276,6 +285,7 @@ func damage(target: Node3D, amount: float, by: Node3D) -> void:
 		return
 	a.hp -= amount
 	a.on_damaged(by as Aircraft)
+	aircraft_damaged.emit(a, by)
 	if a.hp <= 0.0:
 		destroy(a, "shot down")
 
@@ -288,6 +298,7 @@ func destroy(a: Aircraft, reason: String) -> void:
 	var pos := a.global_position
 	var expl: Dictionary = a.data.get("explosion", {}) if a.data.get("explosion") != null else {}
 	Effects.explosion(self, String(expl.get("sprite", "FUELEXP1")), pos, 45.0)
+	Audio.sfx("explosion_1", pos, self, 8.0)
 	a.set_exterior_visible(false)
 	a.hide_attachments()
 	# tumbling wreckage using the original debris models
@@ -309,6 +320,7 @@ func destroy(a: Aircraft, reason: String) -> void:
 
 func ground_explosion(p: Vector3, sprite: String) -> void:
 	Effects.explosion(self, sprite, Vector3(p.x, ground_height(p) + 10.0, p.z), 50.0)
+	Audio.sfx("explosion_4", p, self, 6.0)
 
 
 func _step_wrecks(dt: float) -> void:

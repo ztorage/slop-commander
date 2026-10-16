@@ -9,7 +9,6 @@ var view := View.CHASE
 var _orbit_yaw := 0.6
 var _orbit_pitch := -0.25
 var _orbit_dist := 25.0
-var _chase_rot := Quaternion.IDENTITY
 
 
 func _ready() -> void:
@@ -19,8 +18,12 @@ func _ready() -> void:
 
 
 func snap() -> void:
-	if target:
-		_chase_rot = target.global_basis.get_rotation_quaternion()
+	pass
+
+
+## Step to the previous (-1) or next (+1) view.
+func cycle(step: int) -> void:
+	view = posmod(view + step, View.size()) as View
 
 
 func update_view(dt: float) -> void:
@@ -32,11 +35,9 @@ func update_view(dt: float) -> void:
 		View.COCKPIT:
 			global_transform = Transform3D(t.basis, t * Vector3(0, 1.1, -4.2))
 		View.CHASE:
-			# fixed distance; only the viewing direction lags, so manoeuvres read clearly
-			_chase_rot = _chase_rot.slerp(t.basis.get_rotation_quaternion(), 1.0 - exp(-dt * 4.0))
-			var b := Basis(_chase_rot)
-			global_position = t.origin + b * Vector3(0, 4.0, 20.0)
-			look_at(t.origin + b * Vector3(0, 1.2, -30.0), b.y.lerp(Vector3.UP, 0.35).normalized())
+			# rigidly attached behind and above the jet: no lag, so the view never trails a turn
+			global_transform = Transform3D(t.basis, t * Vector3(0, 4.0, 20.0))
+			look_at(t * Vector3(0, 1.2, -30.0), t.basis.y)
 		View.ORBIT:
 			var dir := Vector3(cos(_orbit_pitch) * sin(_orbit_yaw), -sin(_orbit_pitch), cos(_orbit_pitch) * cos(_orbit_yaw))
 			global_position = t.origin + dir * _orbit_dist

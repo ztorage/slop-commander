@@ -5,7 +5,7 @@ extends Node
 ## Keyboard (close to the original's layout):
 ##   Arrows: stick   , / . : rudder   + / - : throttle   1-0: throttle 10%-100%
 ##   Backspace: afterburner   G: gear   B: airbrake   W: wheel brakes   R: restart on runway
-##   T: restart airborne   F1/F2/F3: cockpit / chase / orbit camera
+##   T: restart airborne   F1/F2/F3 or [ ]: cockpit / chase / orbit camera
 
 const KEYS := {
 	"pitch_up": [KEY_DOWN], "pitch_down": [KEY_UP],

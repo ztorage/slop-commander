@@ -146,7 +146,7 @@ func _draw_external(fm: FlightModel, vp: Vector2) -> void:
 	if fm.stalled: flags.append("STALL")
 	_txt(Vector2(0, vp.y - 40), line + ("   " + " ".join(flags) if flags.size() else ""), 16, COL,
 		HORIZONTAL_ALIGNMENT_CENTER, vp.x)
-	_txt(Vector2(16, 28), "F1 cockpit  F2 chase  F3 orbit   Arrows stick  , . rudder  +/- 1-0 throttle  Bksp AB  G gear  B brake  R/T restart", 13, Color(1, 1, 1, 0.7))
+	_txt(Vector2(16, 28), "[ ] or F1-F3: view   Arrows stick  , . rudder  +/- 1-0 throttle  Bksp AB  G gear  B brake  R/T restart", 13, Color(1, 1, 1, 0.7))
 	if message != "":
 		_txt(Vector2(0, vp.y * 0.5 - 120), message, 26, WARN, HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 

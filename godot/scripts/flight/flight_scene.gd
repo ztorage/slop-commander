@@ -137,6 +137,10 @@ func _unhandled_input(ev: InputEvent) -> void:
 			fm.throttle = (ev.keycode - KEY_0) / 10.0
 		elif ev.keycode == KEY_0:
 			fm.throttle = 1.0
+		elif ev.keycode == KEY_BRACKETLEFT:
+			cam.cycle(-1)
+		elif ev.keycode == KEY_BRACKETRIGHT:
+			cam.cycle(1)
 		elif ev.keycode == KEY_ESCAPE:
 			get_tree().change_scene_to_file("res://scenes/boot.tscn")
 	if ev.is_action_pressed("afterburner"):

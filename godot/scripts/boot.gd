@@ -4,6 +4,7 @@ extends Control
 const MENU := [
 	["Campaign  (story - new game, work in progress)", "res://scenes/campaign.tscn", {"campaign": "new"}],
 	["Continue campaign", "res://scenes/campaign.tscn", {"campaign": "continue"}],
+	["Intro movie", "res://scenes/intro.tscn"],
 	["Missions  (original campaign missions)", "res://scenes/mission_select.tscn"],
 	["Strike practice  (armour, AAA and SAM sites)", "res://scenes/flight.tscn", {"SC_SCENARIO": "strike"}],
 	["Dogfight  (F-16 vs 2 MiG-29s)", "res://scenes/flight.tscn", {"SC_SCENARIO": "dogfight", "SC_BANDITS": "2"}],
@@ -15,6 +16,12 @@ const MENU := [
 
 func _ready() -> void:
 	if GameData.is_ready():
+		# the CD intro plays once per launch (skippable), like the original
+		if not GameData.has_meta("intro_seen") and OS.get_environment("SC_SKIP_INTRO") == "" \
+				and FileAccess.file_exists(GameData.path("cinematics/intro/intro.json")):
+			GameData.set_meta("intro_seen", true)
+			get_tree().change_scene_to_file.call_deferred("res://scenes/intro.tscn")
+			return
 		Audio.music(Audio.MENU_TRACK[0], Audio.MENU_TRACK[1])
 		_show_menu()
 		return

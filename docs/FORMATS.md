@@ -215,8 +215,23 @@ All in `BIGTRE/DATA/GAMEFLOW`.
   blink, 34-36 clothing, 37 sunglasses, 38/39 helmet and visor.
 - Speech: `VOCLIST.TRE` `F_<voice code>.VOC`.
 
+## Intro movie ✅ (`FLIC/THEFLIC.FLX`, `FLIC/FLIC.PAK`, `tools/cinematics.py`)
+Decoded from the CD's player (`MENU.EXE`, "PLAYFLIC 1.0b"), disassembled for the frame codecs.
+- `THEFLIC.FLX`: Origin Flex container; u32 entry count at 0x54, (u32 offset, u32 size) table at
+  0x80. Entries: 1 byte = scene marker; 772 bytes = palette (u16 first, u16 count, 6-bit RGB);
+  frames = 16-byte header [1, compression (0 raw / 1 LZW), codec, margin, 12 x 0] + data, the
+  picture covering rows margin .. 200-margin.
+- Codec 1: full picture. Codec 2: 4x4 blocks, 80 per row; the first data byte is an escape that
+  toggles coded/raw; coded = c0 c1 (equal: solid) or c0 c1 + 16-bit mask (MSB first, set = c1);
+  raw = 16 bytes. Codec 0: transparent run-length overlay (u16 flags, w, h, i16 x0, y0, u16
+  row offsets, rows of skip/count runs; flag bit 0: count>>1 with bit 0 = fill).
+- `FLIC.PAK`: entries 0-14 sound clips (Creative Voice), 15-17 the score for three sound cards
+  (17 = General MIDI, 16 channels), 18-20 a shorter looping score for slow machines. ~10 frames/s
+  locked to the 93.7 s score; clips start at frames 1, 128, 151, 165, 215, 230, 265, 305, 360,
+  385, 415, 550, 680, 705, 760, 830 (one channel, each cuts the previous).
+
 ## Not yet examined ⬜
-Fonts, FLIC cutscenes (`*.FLX`), midgame cutscenes (`MIDGAMES`), flight model constants.
+Fonts, midgame cutscenes (`MIDGAMES`), flight model constants.
 
 ## Credits
 Terrain overlay/object record layouts and the `RANG` colour formula were confirmed against the

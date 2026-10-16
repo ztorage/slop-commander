@@ -134,6 +134,12 @@ def step_audio(extracted, assets, upscale):
     audio.convert(extracted, assets, None, log)
 
 
+def step_cinematics(extracted, assets, upscale):
+    import cinematics
+    manifest_extra = cinematics.convert(extracted, os.path.join(assets, 'cinematics'), log)
+    return manifest_extra
+
+
 def step_story(extracted, assets, upscale):
     import story
     story.convert(extracted, os.path.join(assets, 'story'), upscale, log)
@@ -141,7 +147,7 @@ def step_story(extracted, assets, upscale):
 
 STEPS = [('models', step_models), ('terrain', step_terrain), ('aircraft', step_aircraft),
          ('cockpits', step_cockpits), ('weapons', step_weapons), ('missions', step_missions),
-         ('ground', step_ground), ('audio', step_audio), ('story', step_story)]
+         ('ground', step_ground), ('audio', step_audio), ('story', step_story), ('cinematics', step_cinematics)]
 
 
 def main():

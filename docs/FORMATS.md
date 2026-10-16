@@ -107,6 +107,45 @@ vehicles, `SWPN` SAM/AAA sites & ships, `ORNT` scenery, `DEBR` debris, `EXPL` ex
   `GUNSPARK`, ground explosions `GRNDEX*`, `FLARE`, `CHAFF`).
 - Cockpit `EJEC` frames are overlays for the front view (ejection handle pull, MFDs dropping out).
 
+## Missions ✅ (`MISSIONS/MISN-*.IFF`, `tools/missions.py`, runtime `godot/scripts/mission/`)
+`FORM MISN`: `VERS`, `INFO`/`NAME` (theatre title), `TUNE`, `FORM WRLD/FILE` (world descriptor),
+`AREA`, `SPOT`, `NUMS`, `MSGS` (NUL-separated nav-point labels), `FLAG` (initial flags, every
+other byte), `CAST` (9-byte actor names → profiles), `PROG` (bytecode), `PART`, `TEAM`,
+`FORM PLAY` of `SCNE`, `LOAD`/`CACH` (preload lists).
+Coordinates are signed 24-bit feet stored in 4-byte slots.
+- `AREA`: `char kind ('S'/'C'/'B'), char name[33], x, y, z, u16 width` + kind-specific tail
+  (S 49 bytes total, C 53 with height at +50, B 65 with height at +58).
+- `SPOT` (14): `i16 area (−1 = absolute), u8 ?, x, y, i16 altitude, u8 ?` — relative to its area.
+- `PART` (62): `u16 id, char model[8], char destroyed[8], char loadout[8], u8 area, u8 ?,
+  u16 relative, x, y, i16 alt, u8 ?, u16 heading°, u8 extra[11]` (extra[2] team: 255 = enemy;
+  extra[3] leader; extra[5..10] formation slot `i16 side, ahead, up`), then 4 × (`u8 prog`, pad):
+  on-activated, on-update, on-destroyed, on-init (255 = none). Positions are relative to
+  `area` when it isn't 255. CAST index = PART id.
+- `SCNE`: `u8 active, i16 area (−1 = always), i16 prog on-activated, on-leaving, on-update,
+  u8 coordOnArea, 14 bytes, then u16 cast entries` — **cast entries index the PART list**.
+- `PROG`: `(u8 opcode, u8 arg)` pairs, programs separated by `00 00`. Each actor's update program
+  re-runs every AI tick; objective opcodes (0xA1 take-off, 0xA2 land [+0x09 touchdown spot],
+  0xA5 fly to spot, 0xA6 fly to area, 0xA7 destroy, 0xA8 defend target, 0xA9 defend area,
+  0xAA follow, 0xBF patrol) report "in progress" until complete and 0x46 skips ahead while busy.
+  Flags/registers: 0x10 work=arg, 0x11 work=flag, 0x50 flag=work, 0x52/0x53 set/clear,
+  0x55/0x56 ±1, 0x23 flag+=work, 0x14 save work to a game-flow register, 0x2E work×=arg.
+  Tests: 0x40/0x41 compare, 0x45 flag≠0, 0x92 in same area, 0x93 destroyed?, 0x98 active?,
+  0x95/0x97 distance in thousands of feet. Branches: 0x48 eq, 0x49 ne, 0x4A lt, 0x4B gt, 0x4F to
+  label in work, 0x08 label. Actors: 0x90/0x91 activate/deactivate, 0x94 destroy, 0x80/0x81
+  scene on/off (by index), 0xA0 wait seconds, 0xAB radio message (profile line; Strike Base
+  20 = mission won, 21/22 = lost), 0xB6/0xB7 nav map, 0xB8/0xB9 join/leave the player's flight,
+  0xBE pacify. Provisional (scoring only): 0x20 +arg, 0x21 +flag, 0x24 −flag, 0x25 −arg,
+  0x2F ÷arg, 0x4C branch ≤, 0x4E branch always.
+- The player's nav points are the objective opcodes of the player's init program, each labelled
+  by the following 0xAB (index into `MSGS`).
+
+## Profiles, loadouts, worlds ✅
+- `INTEL/*.IFF` `FORM PROF`: `RADI/INFO` (`u16 id, name\0, callsign\0`), `SPCH` voice id, `MSGS`
+  (`u8 id, text\0`…), `_AI_/ATRB` 9 skills 0–16 (trigger-happy, confidence, verbosity, loyalty,
+  flying, air-to-ground, air-to-air, showmanship, aggressiveness), `GOAL`, `MVRS`.
+- `OBJECTS/*LOAD*.IFF` `FORM WEAP`: `WPNS` (`u16 count, char weapon[8]`…), `DCOY` chaff, flares.
+- `MISSIONS/<world>.IFF` `FORM WRLD`: `TERA` theatre PAK, `PALT`, `SKYS`, `LGHT`, `CAMR` cameras.
+
 ## Not yet examined ⬜
 Missions (`MISN-*.IFF`), fonts, gameflow/conversations, FLIC cutscenes (`*.FLX`), XMIDI music,
 VOC speech, flight model constants.

@@ -21,6 +21,11 @@ var _runway_index := 0
 var _acc := 0.0
 var _power := 0.0                 # 0..1 military throttle, 1..2 afterburner stages
 var _chute: Node3D
+var mission: MissionRunner
+var mission_name := ""
+var nav_map: NavMap
+var time_scale := 1.0
+var _compress := 1.0              # Shift+Tab cycles 1x / 2x / 4x; Tab held = 6x
 var _test := ""
 var _test_t := 0.0
 var _test_shots := {}
@@ -39,9 +44,21 @@ func _ready() -> void:
 	scenario = _env("SC_SCENARIO", scenario)
 	bandits = int(_env("SC_BANDITS", str(bandits)))
 	_test = "flight" if OS.get_environment("SC_FLIGHT_TEST") != "" else ("combat" if OS.get_environment("SC_COMBAT_TEST") != "" else "")
+	if OS.get_environment("SC_MISSION_TEST") != "":
+		_test = "mission"
+		scenario = "mission"
 	if _test == "combat":
 		scenario = "dogfight"
 		bandits = 1
+	var mission_data := {}
+	if scenario == "mission":
+		mission_name = _env("SC_MISSION", "MISN-1A")
+		mission_data = JSON.parse_string(FileAccess.get_file_as_string(GameData.path("missions/%s.json" % mission_name)))
+		var wf := GameData.path("worlds/%s.json" % String(mission_data.world))
+		if not FileAccess.file_exists(wf):
+			wf = GameData.path("worlds/TO_%s.json" % String(mission_data.world))
+		var w: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(wf)) if FileAccess.file_exists(wf) else {}
+		theatre = String(w.get("terrain", mission_data.world))
 	_setup_world()
 	terrain = Terrain.new()
 	add_child(terrain)
@@ -73,6 +90,23 @@ func _ready() -> void:
 	hud.cockpit = cam.cockpit
 	hud.world = world
 	ui.add_child(hud)
+	nav_map = NavMap.new()
+	nav_map.visible = false
+	ui.add_child(nav_map)
+	if scenario == "mission":
+		mission = MissionRunner.new()
+		add_child(mission)
+		mission.setup(mission_data, world, terrain, player)
+		mission.radio.connect(hud.add_radio)
+		if _test == "mission":
+			mission.radio.connect(func(c, t): print("RADIO %6.1f %s: %s" % [_test_t, c, t.replace("\n", " ")]))
+			mission.mission_over.connect(func(w, r): print("OVER %6.1f won=%s %s" % [_test_t, w, r]))
+		mission.mission_over.connect(_on_mission_over)
+		hud.mission = mission
+		nav_map.setup(terrain, mission, player)
+		hud.message = String(mission_data.title).to_upper() + "   —   N: navigation map"
+		get_tree().create_timer(6.0).timeout.connect(func(): if hud.message.ends_with("map"): hud.message = "")
+		return
 	start()
 
 
@@ -175,7 +209,9 @@ func reset_in_air() -> void:
 
 # ---------------------------------------------------------------- simulation
 func _physics_process(delta: float) -> void:
-	if OS.get_environment("SC_EJECT_TEST") != "":
+	if _test == "mission":
+		_mission_test(delta)
+	elif OS.get_environment("SC_EJECT_TEST") != "":
 		_test_t += delta
 		if _test_t > 2.0 and not player.ejected:
 			cam.view = CameraRig.View.COCKPIT_FRONT
@@ -192,13 +228,16 @@ func _physics_process(delta: float) -> void:
 		_combat_test(delta)
 	else:
 		_read_controls(delta)
-	_acc += delta
+	time_scale = 6.0 if Input.is_key_pressed(KEY_TAB) and not Input.is_key_pressed(KEY_SHIFT) else _compress
+	_acc += delta * time_scale
 	var h := 1.0 / PHYSICS_HZ
 	while _acc >= h:
 		for a in world.aircraft:
 			a.simulate(h, terrain)
 		world.step(h)
 		_acc -= h
+	if mission:
+		mission.step(delta * time_scale)
 	if _chute:
 		_chute.global_position += Vector3(player.fm.velocity.x * 0.02, -6.0, player.fm.velocity.z * 0.02) * delta
 		if _chute.global_position.y < world.ground_height(_chute.global_position) + 1.0:
@@ -207,6 +246,11 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	cam.update_view(delta)
+
+
+func _on_mission_over(success: bool, reason: String) -> void:
+	hud.result = {"won": success, "reason": reason}
+	_compress = 1.0
 
 
 func _on_destroyed(a: Aircraft) -> void:
@@ -220,6 +264,11 @@ func _on_destroyed(a: Aircraft) -> void:
 			return
 		hud.message = "%s   —   Ctrl+R: restart on runway   Shift+R: restart airborne" % ("SHOT DOWN" if a.death_reason == "shot down" else "CRASHED: " + player.fm.crash_reason.to_upper())
 		cam.view = CameraRig.View.ORBIT
+		return
+	if mission:
+		var who := mission.actor_for(a)
+		if who and not who.friendly:
+			hud.add_radio("", "Splash one!")
 		return
 	if _test == "combat":
 		print("EVENT %.1f: %s destroyed (%s)" % [_test_t, a.data.name, a.death_reason])
@@ -278,9 +327,16 @@ func _unhandled_input(ev: InputEvent) -> void:
 		elif k == KEY_E and ev.ctrl_pressed:
 			eject()
 		elif k == KEY_R and ev.ctrl_pressed:
-			scenario = "free" if scenario == "free" else scenario
-			start()
-		elif k == KEY_R and ev.shift_pressed:
+			if mission:
+				get_tree().reload_current_scene()
+			else:
+				start()
+		elif k == KEY_N:
+			nav_map.visible = not nav_map.visible
+		elif k == KEY_TAB and ev.shift_pressed:
+			_compress = {1.0: 2.0, 2.0: 4.0, 4.0: 1.0}.get(_compress, 1.0)
+			hud.add_radio("", "Time compression %dx" % int(_compress))
+		elif k == KEY_R and ev.shift_pressed and mission == null:
 			reset_in_air()
 		elif k == KEY_T:
 			if ev.ctrl_pressed:
@@ -375,6 +431,63 @@ func _flight_autopilot(delta: float) -> void:
 	_test_views(plan)
 	if t > 30.0 or player.fm.crashed:
 		get_tree().quit()
+
+
+## Mission smoke test: a simple autopilot flies the player along the navigation points at 4x.
+var _last_nav := -1
+var _test_pilot: AIPilot
+
+
+func _mission_test(delta: float) -> void:
+	if mission == null:
+		print("MISSION FAILED TO LOAD")
+		get_tree().quit()
+		return
+	_compress = 6.0
+	_test_t += delta * time_scale
+	var fm := player.fm
+	var n := mission.current_nav()
+	if mission.nav_index != _last_nav:
+		_last_nav = mission.nav_index
+		print("NAV %6.1f -> %d/%d %s" % [_test_t, mission.nav_index + 1, mission.nav.size(), n.get("label", "(done)")])
+	if fm.on_ground and not n.is_empty() and int(n.op) != MissionRunner.OP_LAND:
+		fm.throttle = 1.0
+		fm.brakes = false
+		fm.stick = Vector2(0, 0.5 if fm.airspeed > 80.0 else 0.0)
+	elif not n.is_empty():
+		var cargo := mission.actor_by_id(8)
+		var target: Vector3 = n.pos
+		if cargo and cargo.spawned and cargo.alive() and mission.nav_index >= 2 and mission.flags[12] == 0:
+			target = cargo.position() + Vector3.UP * 300.0   # escort the cargo plane until it lands
+		target.y = maxf(target.y, world.ground_height(target) + 900.0)
+		if _test_pilot == null:
+			_test_pilot = AIPilot.new(player, 0.8)
+		_test_pilot._cruise(target, 0.9)
+		if fm.position.y - world.ground_height(fm.position) > 100.0:
+			fm.gear_down = false
+	if int(_test_t) % 4 == 0 and int(_test_t - delta * time_scale) % 4 != 0:
+		var gp := world.ground_height(player.global_position)
+		print("  P %6.1f alt=%5.0fft gnd=%5.0fft spd=%3.0fkt pitch=%5.1f roll=%5.1f tgt_alt=%5.0fft" % [_test_t, player.global_position.y / FT, gp / FT,
+			fm.airspeed / 0.5144, rad_to_deg(asin(-fm.basis.z.y)), rad_to_deg(fm.basis.get_euler(EULER_ORDER_YXZ).z), (n.pos.y if not n.is_empty() else 0.0) / FT])
+	if int(_test_t) % 20 == 0 and int(_test_t - delta * time_scale) % 20 != 0:
+		var b := []
+		for a in mission.actors:
+			if a.spawned and not a.is_player:
+				b.append("%s[%s%s cmd=%x%s]" % [a.name, "A" if a.active else "-", "" if a.alive() else "X", a.command,
+					(" " + (a.node as Aircraft).ai._state) if a.node is Aircraft and (a.node as Aircraft).ai else ""])
+		print("T %6.1f area=%d flags=%s | %s" % [_test_t, mission.player_area, Array(mission.flags.slice(0, 16)), " ".join(b)])
+	for mark in [3.0, 120.0, 240.0, 360.0]:
+		if _test_t >= mark and not _test_shots.has(mark):
+			_test_shots[mark] = true
+			cam.view = CameraRig.View.CHASE
+			nav_map.visible = mark == 120.0
+			_shot("t%03d" % int(mark))
+	if _test_t > float(_env("SC_TEST_SECONDS", "1500")) or mission.over:
+		if not _test_shots.has("end"):
+			_test_shots["end"] = true
+			print("UNKNOWN OPS ", mission.unknown_ops)
+			_shot("end")
+			get_tree().create_timer(1.0).timeout.connect(get_tree().quit)
 
 
 ## AI vs AI: the player's jet is flown by an AIPilot against one MiG-29.

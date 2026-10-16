@@ -13,6 +13,7 @@ var theatre := ""
 var grid_size := 0
 var spacing_m := 0.0
 var heights: PackedInt32Array   # feet
+var color_image: Image           # grid colours (for the nav map)
 var _palette: Image
 
 
@@ -48,6 +49,7 @@ func load_theatre(theatre_name: String, with_objects := true) -> bool:
 		ids[i * 2] = upper[i]
 		ids[i * 2 + 1] = lower[i]
 	var id_img := Image.create_from_data(grid_size, grid_size, false, Image.FORMAT_RG8, ids)
+	color_image = color_img
 
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/terrain.gdshader")

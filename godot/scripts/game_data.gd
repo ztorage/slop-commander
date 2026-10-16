@@ -7,7 +7,7 @@ extends Node
 ##   2. <user data dir>/gamedata         (for exported builds)
 ##   3. <repo>/gamedata                  (next to the godot/ project, for development)
 
-const REQUIRED_CONVERTER_VERSION := 6
+const REQUIRED_CONVERTER_VERSION := 7
 
 var root := ""
 var manifest := {}

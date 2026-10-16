@@ -41,6 +41,7 @@ the `godot/` project. Without it, the game shows instructions and does not start
 | F3 / F4 / F5 | look left / right / back | F6 | external (orbit, mouse-drag) |
 | `[` `]` | cycle views | D | right MFD: weapons / damage |
 | Ctrl+I | cockpit art on/off | Ctrl+R / Shift+R | restart / restart airborne |
+| N | navigation map | Shift+Tab / Tab (hold) | time compression 1×/2×/4× / 6× |
 | Esc | menu | | |
 
 Gamepads: left stick flies, triggers are throttle, A fires, X next weapon, Y target, B decoys.

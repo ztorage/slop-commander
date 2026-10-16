@@ -13,6 +13,37 @@ var aircraft: Aircraft
 var camera: Camera3D
 var cockpit: Cockpit
 var world: CombatWorld
+var mission: MissionRunner
+var result := {}                   # set when a mission ends
+var _radio: Array = []             # [[text, expires_msec]]
+
+
+func add_radio(callsign: String, text: String) -> void:
+	var line := ("%s: %s" % [callsign, text]) if callsign != "" else text
+	_radio.append([line.replace("\n", " "), Time.get_ticks_msec() + 7000])
+	if _radio.size() > 5:
+		_radio.pop_front()
+
+
+## Radio log, current waypoint and mission result; drawn in every view.
+func _draw_mission(vp: Vector2) -> void:
+	var now := Time.get_ticks_msec()
+	_radio = _radio.filter(func(r): return r[1] > now)
+	for i in _radio.size():
+		_txt(Vector2(16, 60 + i * 20), _radio[i][0], 15, Color(1, 1, 0.75))
+	if mission:
+		var n := mission.current_nav()
+		if not n.is_empty():
+			var to: Vector3 = n.pos - aircraft.global_position
+			var brg := fposmod(rad_to_deg(atan2(to.x, -to.z)), 360.0)
+			_txt(Vector2(vp.x - 420, 28), "WP %d/%d  %s" % [mission.nav_index + 1, mission.nav.size(), n.label], 15, COL, HORIZONTAL_ALIGNMENT_RIGHT, 400)
+			_txt(Vector2(vp.x - 420, 48), "BRG %03d   %.1f NM" % [int(brg), Vector2(to.x, to.z).length() / 1852.0], 15, COL, HORIZONTAL_ALIGNMENT_RIGHT, 400)
+	if not result.is_empty():
+		draw_rect(Rect2(Vector2(0, vp.y * 0.36), Vector2(vp.x, vp.y * 0.2)), Color(0, 0, 0, 0.6))
+		_txt(Vector2(0, vp.y * 0.44), "MISSION ACCOMPLISHED" if result.won else "MISSION FAILED", 34,
+			COL if result.won else WARN, HORIZONTAL_ALIGNMENT_CENTER, vp.x)
+		_txt(Vector2(0, vp.y * 0.44 + 36), String(result.reason) + "     Ctrl+R: fly again   Esc: menu", 18,
+			Color(1, 1, 1), HORIZONTAL_ALIGNMENT_CENTER, vp.x)
 var message := ""
 var _font: Font
 
@@ -39,6 +70,7 @@ func _draw() -> void:
 	var vp := get_viewport_rect().size
 	if cockpit and cockpit.ejecting():
 		return
+	_draw_mission(vp)
 	var rig := camera as CameraRig
 	if rig and not rig.is_cockpit():
 		_draw_external(fm, vp)

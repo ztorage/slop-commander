@@ -1,23 +1,24 @@
 extends Canvas320
-## In-engine cutscenes (midgames), played from a timeline written by tools/midgames.py from the
-## original's scene engine: each scene ticks at its own rate; objects are sprites placed relative
-## to a parent, moving by a velocity each tick, animations advance one frame per tick; speech
-## clips start on given ticks. "cards" shots fade text cards in and out over a background.
-## Any key or click skips the whole cutscene.
+## In-engine cutscenes (midgames), from tools/midgames.py, which runs the original's scene
+## engine and records what it draws: a "scene" shot ticks at its own rate and has keyframes
+## (the layers drawn from that tick on: image, position, optional clip rectangle), speech clips
+## and music changes on given ticks, and an optional subtitle. "cards" shots fade text cards in
+## and out over a background. Everything is drawn into the scene's viewport (the letterbox
+## band) unless a layer has its own clip. Any key or click skips the whole cutscene.
 
 var data := {}
 var dir := ""
 var shot := -1
 var _t := 0.0                    # seconds into the current shot
-var _tick := -1                  # last applied tick of the current scene
-var _objs := {}                  # id -> {x, y, vel, parent, frames, anim, start}
-var _order: Array = []           # draw order of ids
-var _events: Array = []
-var _ev := 0
+var _tick := -1                  # current tick of the current scene
+var _kf := -1                    # current keyframe
+var _voice_i := 0
+var _music_i := 0
 var _voice: AudioStreamPlayer
 var _done := false
 var _next_scene := "res://scenes/boot.tscn"
 var _test_shots := 0
+var _speed := 1.0                # SC_MIDGAME_SPEED (tests)
 
 
 func _ready() -> void:
@@ -35,9 +36,10 @@ func _ready() -> void:
 	_voice = AudioStreamPlayer.new()
 	_voice.bus = "SFX"
 	add_child(_voice)
-	var m = data.get("music")
-	if m != null:
-		Audio.music(String(m.set), int(m.track))
+	var start := OS.get_environment("SC_MIDGAME_SHOT")
+	shot = int(start) - 2 if start != "" else -1
+	if OS.get_environment("SC_MIDGAME_SPEED") != "":
+		_speed = float(OS.get_environment("SC_MIDGAME_SPEED"))
 	_next_shot()
 
 
@@ -45,70 +47,50 @@ func _next_shot() -> void:
 	shot += 1
 	_t = 0.0
 	_tick = -1
-	_objs.clear()
-	_order.clear()
-	_ev = 0
+	_kf = -1
+	_voice_i = 0
+	_music_i = 0
 	if shot >= data.get("shots", []).size():
 		_finish()
-		return
-	_events = data.shots[shot].get("events", [])
 
 
 func _process(delta: float) -> void:
 	if _done or data.is_empty() or shot >= data.shots.size():
 		return
+	delta *= _speed
 	_t += delta
 	var s: Dictionary = data.shots[shot]
 	if String(s.type) == "scene":
-		var target := int(_t * float(s.tick_hz))
-		while _tick < target and _tick < int(s.ticks):
-			_step_tick()
+		var target := mini(int(_t * float(s.tick_hz)), int(s.ticks))
+		while _tick < target:
+			_step_tick(s)
 		if _tick >= int(s.ticks):
 			_next_shot()
 	elif String(s.type) == "cards":
 		if _t >= _cards_length(s):
 			_next_shot()
 	queue_redraw()
-	if OS.get_environment("SC_MIDGAME_TEST") != "" and int(_t * 2.0) != int((_t - delta) * 2.0) and int(_t * 2.0) % 6 == 1:
+	if OS.get_environment("SC_MIDGAME_TEST") != "" and int(_t * 2.0) != int((_t - delta) * 2.0) and int(_t * 2.0) % 4 == 1:
 		_test_shots += 1
-		capture("mid_%02d_%02d" % [shot, _test_shots])
+		capture("mid_%02d_%03d" % [shot + 1, _test_shots])
 
 
-## One scene tick: the original moves objects after drawing; the events of a tick come first.
-func _step_tick() -> void:
-	# move (the previous tick's update)
-	if _tick >= 0:
-		for id in _objs:
-			var o: Dictionary = _objs[id]
-			o.x += float(o.vel[0])
-			o.y += float(o.vel[1])
+func _step_tick(s: Dictionary) -> void:
 	_tick += 1
-	while _ev < _events.size() and int(_events[_ev].t) <= _tick:
-		var e: Dictionary = _events[_ev]
-		if e.has("add"):
-			var a: Dictionary = e.add
-			_objs[a.id] = {"x": float(a.x), "y": float(a.y), "vel": a.vel, "parent": a.parent,
-				"frames": a.frames, "anim": a.anim, "start": _tick}
-			_order.append(a.id)
-		elif e.has("vel"):
-			if _objs.has(e.vel.id):
-				_objs[e.vel.id].vel = e.vel.v
-		elif e.has("remove"):
-			_objs.erase(e.remove)
-			_order.erase(e.remove)
-		elif e.has("voice"):
-			_voice.stop()
-			_voice.stream = AudioStreamWAV.load_from_file(GameData.path(dir + String(e.voice)))
-			_voice.play()
-		_ev += 1
-
-
-func _abs(id) -> Vector2:
-	var o: Dictionary = _objs[id]
-	var p := Vector2(o.x, o.y)
-	if o.parent != null and _objs.has(o.parent):
-		p += _abs(o.parent)
-	return p
+	var frames: Array = s.frames
+	while _kf + 1 < frames.size() and int(frames[_kf + 1][0]) <= _tick:
+		_kf += 1
+	var voices: Array = s.get("voices", [])
+	while _voice_i < voices.size() and int(voices[_voice_i][0]) <= _tick:
+		_voice.stop()
+		_voice.stream = AudioStreamWAV.load_from_file(GameData.path(dir + String(voices[_voice_i][1])))
+		_voice.play()
+		_voice_i += 1
+	var music: Array = s.get("music", [])
+	while _music_i < music.size() and int(music[_music_i][0]) <= _tick:
+		var m: Dictionary = music[_music_i][1]
+		Audio.music(String(m.set), int(m.track))
+		_music_i += 1
 
 
 func _cards_length(s: Dictionary) -> float:
@@ -116,6 +98,27 @@ func _cards_length(s: Dictionary) -> float:
 	for c in s.cards:
 		total += float(c.in_s) + float(c.hold_s) + float(c.out_s) + float(c.after_s)
 	return total
+
+
+## Draw an image entry with its hotspot at `at`, clipped to the inclusive rectangle `clip`
+## (original pixels).
+func _draw_clipped(e: Dictionary, at: Vector2, clip: Rect2, mod: Color) -> void:
+	var tex := texture(String(e.file), img_dir)
+	if tex == null:
+		return
+	var r := Rect2(at + Vector2(float(e.x), float(e.y)), Vector2(float(e.w), float(e.h)))
+	var c := r.intersection(clip)
+	if c.size.x <= 0.0 or c.size.y <= 0.0:
+		return
+	var k := Vector2(tex.get_width() / r.size.x, tex.get_height() / r.size.y)
+	var src := Rect2((c.position - r.position) * k, c.size * k)
+	var tl := to_screen(c.position)
+	var br := to_screen(c.end)
+	draw_texture_rect_region(tex, Rect2(tl, br - tl), src, mod)
+
+
+func _rect(v: Array, i: int) -> Rect2:
+	return Rect2(float(v[i]), float(v[i + 1]), float(v[i + 2]) - float(v[i]) + 1.0, float(v[i + 3]) - float(v[i + 1]) + 1.0)
 
 
 func _draw() -> void:
@@ -127,19 +130,19 @@ func _draw() -> void:
 	if s.has("fade_in_s"):
 		fade = clampf(_t / float(s.fade_in_s), 0.0, 1.0)
 	var mod := Color(fade, fade, fade)
+	var view := _rect(s.view, 0) if s.has("view") else Rect2(0, 0, W, H)
+	var images: Array = data.images
 	if String(s.type) == "scene":
-		for id in _order:
-			var o: Dictionary = _objs[id]
-			var fr: Array = o.frames
-			if fr.is_empty():
-				continue
-			var i := 0
-			if o.anim:
-				i = clampi(_tick - int(o.start), 0, fr.size() - 1)
-			draw_entry(fr[i], _abs(id), mod)
+		if _kf >= 0:
+			for l in s.frames[_kf][1]:
+				var clip := _rect(l, 3) if l.size() > 3 else view
+				_draw_clipped(images[int(l[0])], Vector2(float(l[1]), float(l[2])), clip, mod)
+		var sub = s.get("subtitle")
+		if sub != null and _tick >= int(sub[0]):
+			draw_caption(String(sub[1]), 156.0, Color(0.95, 0.92, 0.8))
 	else:
 		for b in s.background:
-			draw_entry(b)
+			_draw_clipped(b, Vector2.ZERO, view, Color.WHITE)
 		var t := _t
 		for c in s.cards:
 			var span := float(c.in_s) + float(c.hold_s) + float(c.out_s)
@@ -172,7 +175,12 @@ func _finish() -> void:
 	_done = true
 	if _voice:
 		_voice.stop()
-	Audio.stop_music(1.0)
+	# the intro ends on the title music, which carries on into the menu
+	var natural_end: bool = shot >= data.get("shots", []).size()
+	if natural_end and not data.is_empty() and data.shots[-1].get("keep_music", false):
+		GameData.set_meta("music_playing", true)
+	else:
+		Audio.stop_music(1.0)
 	if OS.get_environment("SC_MIDGAME_TEST") != "":
 		get_tree().quit()
 		return

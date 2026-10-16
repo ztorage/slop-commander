@@ -231,21 +231,33 @@ Decoded from the CD's player (`MENU.EXE`, "PLAYFLIC 1.0b"), disassembled for the
   ends; clips start at frames 1, 128, 151, 165, 215, 230, 265, 305, 360, 385, 415, 550, 680, 705,
   760, 830 (one channel, each cuts the previous).
 
-## Cutscenes ("midgames") 🟡 (`MIDGAMES/*`, `tools/midgames.py`, runtime `midgame_player.gd`)
+## Cutscenes ("midgames") 🟢 intro (`MIDGAMES/*`, `tools/midgames.py`, runtime `midgame_player.gd`)
 The art is data, the choreography is code in `OPTTEST.EXE` (Borland C++, VROOMM overlays: far calls
-in overlay code use segment = 8 x index into the `FBOV` segment table at file offset 0x50570,
-entries (u16 paragraph, size, flags, ?)). The intro is the function at image offset 0x671A0 and
-its continuation at 0x6E882 (DS = 0x4C25).
+in overlay code use segment = 8 x index into the segment table at file offset 0x50570, entries
+(u16 paragraph, size, flags, ?); overlay entries point at stubs `CD 3F, u16, u32 file offset
+(from FBOV), u16 code size, u16 reloc size, u16 entry count`, then 5-byte `CD 3F u16 offset 00`
+entries). The intro is two overlay functions: image offset 0x671A0 (shots 1-8) which calls
+0x6E910 (shots 9-25) with all its loaded resources. DS = 0x4C25 (image 0x4C250).
 - `MIDn.PAK` (LZW entries): shape sets (320x128 cutscene frames, hotspot conventions as
   conversations) and palette patches; `MIDGAMES.PAK`: shared backgrounds, clouds, palettes;
-  `MIDnVOC.PAK`: speech; `MIDGAMES.IFF`: per cutscene `MGnn/DATA` (cards) and `SPOK` (subtitles).
-- Scene engine: a scene ticks every N/60 s (the cutscene timer is a 60 Hz AIL timer callback;
-  intro scenes use N = 10 or 20); objects are sprites (shape set, frame, x, y relative to a
-  parent, children), panning sprites add a velocity each tick, animations advance one frame per
-  tick and report done after their last frame; speech starts on scene frame counts.
-- Intro so far: sky + eagle (speech 7 at frames 20, 35), four credit cards (fade 16 x 3 ticks,
-  hold 100, gap 100/250), parallax dive through the clouds until the nearest layer reaches y 60,
-  jet fly-by MID1 13 at (0, -70) with speech 8 at frame 65. Font: MID1 27 (ASCII glyphs).
+  `MIDnVOC.PAK`: speech; `MIDGAMES.IFF`: per cutscene `MGnn/DATA` (cards) and `SPOK` (the floppy
+  version's subtitles; the CD version plays speech instead and shows no text).
+- Scene engine: a scene ticks every N/60 s (60 Hz AIL timer; intro scenes use N = 10, 15, 20).
+  TICK draws every object (parent first, then children at the parent's position + their own)
+  into the viewport rows 24-151 without clearing it, then updates them. Object classes: plain
+  sprite; animation (frame + 1, done after the last); looping animation; pan (adds vx, vy);
+  jitter (random walk of up to 1 px per tick); overlay (frame 0 under the current frame); growing
+  overlay (frame climbs to the last); clipped sprite (own position, clip rectangle at +0x21);
+  conversation face (frame 0, eyes, mouth, children; the pilot subclass adds frames 35, 38);
+  visor (MIDGAMES 0: frame 0 while < 4, 13 while > 8, 1 at 12, else the frame, climbing to 13).
+- Lip-sync: the face consumes one character of a text per tick: letters map through
+  `06891599098769362999252999` (a-z, + 2 = mouth frame), "th" -> 9, "ch"/"er" -> 6, an 'e' before
+  a non-letter is silent, 'h' skips the next character. Blinks (frame 12) are random 1 in 30
+  unless the eye frame is above 20.
+- Speech loops poll the driver once per tick; palettes accumulate patches over the whole intro.
+  The HUD shots read pipper paths (41 x/y), offsets, blink tables and bouncing-symbol state from
+  DS 0x22AA/0x23B0/0x259E onwards. The intro ends with MMUSIC track 23 (title), a 2 s hold and
+  the picture opening out from the band to the full screen (25 steps).
 
 ## Not yet examined ⬜
 Fonts (other than the cutscene font), flight model constants.

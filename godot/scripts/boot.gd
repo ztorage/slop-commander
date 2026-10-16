@@ -5,7 +5,7 @@ const MENU := [
 	["Campaign  (story - new game, work in progress)", "res://scenes/campaign.tscn", {"campaign": "new"}],
 	["Continue campaign", "res://scenes/campaign.tscn", {"campaign": "continue"}],
 	["Intro movie", "res://scenes/intro.tscn"],
-	["Strike Commander intro (cutscene, in progress)", "res://scenes/midgame.tscn", {"midgame": "mid1"}],
+	["Strike Commander intro (in-engine cutscene)", "res://scenes/midgame.tscn", {"midgame": "mid1"}],
 	["Missions  (original campaign missions)", "res://scenes/mission_select.tscn"],
 	["Strike practice  (armour, AAA and SAM sites)", "res://scenes/flight.tscn", {"SC_SCENARIO": "strike"}],
 	["Dogfight  (F-16 vs 2 MiG-29s)", "res://scenes/flight.tscn", {"SC_SCENARIO": "dogfight", "SC_BANDITS": "2"}],
@@ -23,7 +23,10 @@ func _ready() -> void:
 			GameData.set_meta("intro_seen", true)
 			get_tree().change_scene_to_file.call_deferred("res://scenes/intro.tscn")
 			return
-		Audio.music(Audio.MENU_TRACK[0], Audio.MENU_TRACK[1])
+		if GameData.get_meta("music_playing", false):     # the intro's title music carries on
+			GameData.remove_meta("music_playing")
+		else:
+			Audio.music(Audio.MENU_TRACK[0], Audio.MENU_TRACK[1])
 		_show_menu()
 		return
 	var bg := ColorRect.new()
